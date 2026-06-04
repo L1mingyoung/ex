@@ -1,0 +1,23 @@
+# 依赖
+node_modules/
+python/.venv/
+
+# 环境变量（含密码/密钥）
+.env
+
+# 编译产物
+dist/
+
+# ONNX 模型（太大）
+python/models/*.onnx
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Docker
+pgdata/

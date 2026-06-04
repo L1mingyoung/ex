@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI Companion - 聊天</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<div id="app">
+  <!-- ═══ 左侧栏 ═══ -->
+  <aside id="sidebar">
+
+    <!-- 状态 -->
+    <div id="status-bar">
+      <span id="status-dot"></span>
+      <span id="status-text">在线</span>
+    </div>
+
+    <!-- 角色列表 -->
+    <section id="characters-section">
+      <h3>🤖 角色</h3>
+      <div id="character-list"></div>
+      <form id="new-char-form">
+        <input id="char-id" placeholder="ID (英文)" required>
+        <input id="char-name" placeholder="名称" required>
+        <textarea id="char-prompt" placeholder="人格设定..." rows="2" required></textarea>
+        <button type="submit">+ 创建角色</button>
+      </form>
+    </section>
+
+    <!-- 会话列表 -->
+    <section id="sessions-section">
+      <h3>💬 会话</h3>
+      <button id="new-session-btn" disabled>+ 新对话</button>
+      <div id="session-list"></div>
+    </section>
+
+  </aside>
+
+  <!-- ═══ 主聊天区 ═══ -->
+  <main id="chat-area">
+    <header id="chat-header">
+      <h2 id="chat-title">选择一个会话开始聊天</h2>
+    </header>
+    <div id="messages"></div>
+    <div id="input-area">
+      <textarea id="message-input"
+        placeholder="输入消息... (Enter 发送, Shift+Enter 换行)"
+        disabled
+        rows="2"></textarea>
+      <button id="send-btn" disabled>发送</button>
+    </div>
+  </main>
+</div>
+
+<script type="module" src="js/chat.js"></script>
+<script type="module">
+  import { init } from './js/chat.js';
+  init();
+</script>
+</body>
+</html>

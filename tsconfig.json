@@ -1,0 +1,26 @@
+{
+  "compilerOptions": {
+    // TS 5.9 已弃用 baseUrl，使用 paths 替代；这里关闭弃用警告
+    "ignoreDeprecations": "5.0",
+    "module": "nodenext",          // 输出 ESM 模块
+    "moduleResolution": "nodenext", // 配套的模块解析策略
+    "resolvePackageJsonExports": true,
+    "esModuleInterop": true,
+    "isolatedModules": true,
+    "declaration": true,           // 生成 .d.ts 类型声明文件
+    "removeComments": false,       // 保留注释（学习用）
+    "emitDecoratorMetadata": true, // TypeORM 需要：发射装饰器元数据
+    "experimentalDecorators": true,// 启用装饰器语法
+    "allowSyntheticDefaultImports": true,
+    "target": "ES2023",
+    "sourceMap": true,
+    "outDir": "./dist",
+    "incremental": true,
+    "skipLibCheck": true,
+    "strictNullChecks": true,      // 严格 null 检查
+    "forceConsistentCasingInFileNames": true,
+    "noImplicitAny": true,         // 禁止隐式 any
+    "strictBindCallApply": true,
+    "noFallthroughCasesInSwitch": true
+  }
+}

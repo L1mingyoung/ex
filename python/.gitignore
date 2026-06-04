@@ -1,0 +1,9 @@
+# ONNX 模型文件（太大，不提交 git）
+models/*.onnx
+
+# uv 虚拟环境
+.venv/
+
+# Python
+__pycache__/
+*.pyc

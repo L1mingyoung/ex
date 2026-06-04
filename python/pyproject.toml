@@ -1,0 +1,20 @@
+[project]
+name = "companion-embedding"
+version = "0.1.0"
+description = "AI Companion - 文本向量化服务 (FastAPI + ONNX Runtime)"
+requires-python = ">=3.10"
+dependencies = [
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.34.0",
+    "onnxruntime>=1.20.0",
+    "numpy>=2.0.0",
+    "pydantic>=2.0.0",
+    "huggingface-hub>=1.17.0",
+    "certifi>=2026.5.20",
+    "truststore>=0.10.4",
+]
+
+[dependency-groups]
+dev = [
+    "httpx>=0.28.0",
+]
