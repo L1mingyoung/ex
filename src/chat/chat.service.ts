@@ -7,6 +7,7 @@ import { SessionsService } from '../sessions/sessions.service';
 import { MessagesService } from '../messages/messages.service';
 import { MemoriesService, MemoryType } from '../memories/memories.service';
 import { LlmService, ChatMessage } from '../llm/llm.service';
+import { JiwenEmotionService } from '../emotion/jiwen-emotion.service';
 
 /**
  * 聊天服务 —— 核心业务编排（Day 6 完整版）
@@ -33,15 +34,18 @@ export class ChatService {
     private readonly messagesService: MessagesService,
     private readonly memoriesService: MemoriesService,
     private readonly llmService: LlmService,
+    private readonly jiwenEmotionService: JiwenEmotionService,
   ) {}
 
   async handleMessage(sessionId: string, userContent: string) {
     // ════ 同步部分（用户等待） ════
 
+    const userEmotion = this.jiwenEmotionService.analyze(userContent);
     const userMsg = await this.messagesService.create(
       sessionId,
       'user',
       userContent,
+      userEmotion,
     );
 
     const session = await this.sessionsService.findOne(sessionId);
@@ -70,7 +74,9 @@ export class ChatService {
     const systemPrompt = this.buildSystemPrompt(
       character,
       session.summary,
+      session.importProfile,
       memories,
+      this.jiwenEmotionService.summarize(userEmotion),
     );
     const messages: ChatMessage[] = [
       { role: 'system', content: systemPrompt },
@@ -84,7 +90,7 @@ export class ChatService {
     const assistantContent = await this.llmService.chat(messages);
 
     await this.messagesService.create(sessionId, 'assistant', assistantContent);
-    await this.sessionsService.incrementMessageCount(sessionId);
+    await this.sessionsService.incrementMessageCount(sessionId, 2);
 
     // ════ 异步部分（不阻塞用户） ════
 
@@ -125,10 +131,12 @@ export class ChatService {
       (async () => {
         try {
           // 1. 保存用户消息
+          const userEmotion = this.jiwenEmotionService.analyze(userContent);
           const userMsg = await this.messagesService.create(
             sessionId,
             'user',
             userContent,
+            userEmotion,
           );
 
           // 2. 读上下文
@@ -159,7 +167,9 @@ export class ChatService {
           const systemPrompt = this.buildSystemPrompt(
             character,
             session.summary,
+            session.importProfile,
             memories,
+            this.jiwenEmotionService.summarize(userEmotion),
           );
           const messages: ChatMessage[] = [
             { role: 'system', content: systemPrompt },
@@ -189,7 +199,7 @@ export class ChatService {
                 'assistant',
                 fullReply,
               );
-              await this.sessionsService.incrementMessageCount(sessionId);
+              await this.sessionsService.incrementMessageCount(sessionId, 2);
 
               // 异步提取记忆
               setImmediate(() => {
@@ -305,7 +315,7 @@ AI：${assistantMsg}
    *
    * 触发条件：
    *  - 消息数 >= 50 条
-   *  - 距离上次摘要 >= 1 小时（用 updated_at 判断）
+   *  - 距离上次摘要 >= 1 小时（用 last_summary_at 判断）
    *
    * 流程：
    *  1. 读取最近 50 条消息
@@ -320,9 +330,9 @@ AI：${assistantMsg}
       // 条件 1：消息数 >= 50
       if (session.messageCount < 50) return;
 
-      // 条件 2：距离上次更新 >= 1 小时
+      // 条件 2：距离上次摘要 >= 1 小时。不能用 updatedAt，聊天本身会刷新它。
       const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
-      if (session.updatedAt > oneHourAgo) return;
+      if (session.lastSummaryAt && session.lastSummaryAt > oneHourAgo) return;
 
       console.log(`[Summarize] 开始为会话 ${sessionId} 生成摘要...`);
 
@@ -347,8 +357,8 @@ ${conversation}
         },
       );
 
-      // 更新 session
-      await this.sessionsService.updateSummary(sessionId, summary);
+      // 更新 session，并清零未摘要消息计数
+      await this.sessionsService.markSummarized(sessionId, summary);
       console.log(`[Summarize] 摘要已生成 (${summary.length} 字符)`);
     } catch (err) {
       console.error('[Summarize]', (err as Error).message);
@@ -358,11 +368,57 @@ ${conversation}
   // ═══════════════════════════════════════════════════════════════
   //  System Prompt 组装
   // ═══════════════════════════════════════════════════════════════
+  private formatImportProfile(profile: unknown): string | null {
+    if (!profile || typeof profile !== 'object') return null;
+    const data = profile as {
+      userPersona?: {
+        stableFacts?: string[];
+        preferences?: string[];
+        communicationStyle?: string[];
+        emotionalPatterns?: string[];
+        boundaries?: string[];
+      };
+      relationshipProfile?: {
+        relationshipTone?: string;
+        closenessLevel?: string;
+        trustSignals?: string[];
+        recurringTopics?: string[];
+        supportNeeds?: string[];
+        assistantRole?: string;
+      };
+    };
+
+    const lines: string[] = [];
+    const addList = (label: string, values?: string[]) => {
+      const items = Array.isArray(values) ? values.filter(Boolean).slice(0, 5) : [];
+      if (items.length > 0) lines.push(`${label}：${items.join('；')}`);
+    };
+
+    addList('稳定事实', data.userPersona?.stableFacts);
+    addList('长期偏好', data.userPersona?.preferences);
+    addList('表达风格', data.userPersona?.communicationStyle);
+    addList('情绪模式', data.userPersona?.emotionalPatterns);
+    addList('边界', data.userPersona?.boundaries);
+
+    const relationship = data.relationshipProfile;
+    if (relationship?.relationshipTone) lines.push(`关系语气：${relationship.relationshipTone}`);
+    if (relationship?.closenessLevel) lines.push(`亲密度：${relationship.closenessLevel}`);
+    addList('信任信号', relationship?.trustSignals);
+    addList('反复话题', relationship?.recurringTopics);
+    addList('支持需求', relationship?.supportNeeds);
+    if (relationship?.assistantRole) lines.push(`AI 角色：${relationship.assistantRole}`);
+
+    return lines.length > 0 ? lines.join('\n') : null;
+  }
+
+
 
   private buildSystemPrompt(
     character: { basePrompt: string; name: string },
     summary: string | null,
+    importProfile: unknown,
     memories: { content: string }[],
+    emotionSummary?: string | null,
   ): string {
     const parts: string[] = [
       // 第一层：固定人格
@@ -374,13 +430,24 @@ ${conversation}
       parts.push(`【你们之前的对话摘要】\n${summary}`);
     }
 
+
+    const profileSummary = this.formatImportProfile(importProfile);
+    if (profileSummary) {
+      parts.push(`【长期人格/关系画像】\n${profileSummary}`);
+    }
+
     // 第三层：动态记忆 ✅ Day 5
     if (memories.length > 0) {
       const memoryLines = memories.map((m) => `- ${m.content}`).join('\n');
       parts.push(`【关于用户的记忆】\n${memoryLines}`);
     }
 
-    // 第四层：指令约束
+    // 第四层：当前情绪状态 ✅ jiwen
+    if (emotionSummary) {
+      parts.push(`【jiwen 情绪状态】\n${emotionSummary}`);
+    }
+
+    // 第五层：指令约束
     parts.push(
       '请记住以上信息，用符合你性格的方式回复。保持角色一致性，不要跳出人设。',
     );
@@ -388,3 +455,4 @@ ${conversation}
     return parts.filter(Boolean).join('\n\n');
   }
 }
+

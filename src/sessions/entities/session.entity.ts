@@ -6,22 +6,54 @@ import {
   UpdateDateColumn,
 } from 'typeorm';
 
+export interface ImportProfile {
+  userPersona?: {
+    stableFacts?: string[];
+    preferences?: string[];
+    communicationStyle?: string[];
+    emotionalPatterns?: string[];
+    boundaries?: string[];
+  };
+  relationshipProfile?: {
+    relationshipTone?: string;
+    closenessLevel?: 'low' | 'medium' | 'high' | string;
+    trustSignals?: string[];
+    recurringTopics?: string[];
+    supportNeeds?: string[];
+    assistantRole?: string;
+  };
+  evidence?: {
+    source?: string;
+    messageCount?: number;
+    generatedAt?: string;
+  };
+}
+
 @Entity('sessions')
 export class Session {
   @PrimaryGeneratedColumn('uuid')
-  id: string; // UUID 自动生成
+  id: string;
 
   @Column({ name: 'character_id' })
-  characterId: string; // 关联的角色 ID
+  characterId: string;
 
   @Column({ nullable: true })
-  title: string; // 会话标题
+  title: string;
 
   @Column({ type: 'text', nullable: true })
-  summary: string; // 滚动摘要
+  summary: string;
 
   @Column({ name: 'message_count', default: 0 })
-  messageCount: number; // 消息计数（用于判断是否触发摘要）
+  messageCount: number;
+
+  @Column({ name: 'last_summary_at', type: 'timestamptz', nullable: true })
+  lastSummaryAt: Date | null;
+
+  @Column({ name: 'import_profile', type: 'jsonb', nullable: true })
+  importProfile: ImportProfile | null;
+
+  @Column({ name: 'profile_updated_at', type: 'timestamptz', nullable: true })
+  profileUpdatedAt: Date | null;
 
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;

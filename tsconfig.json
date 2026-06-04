@@ -2,9 +2,8 @@
   "compilerOptions": {
     // TS 5.9 已弃用 baseUrl，使用 paths 替代；这里关闭弃用警告
     "ignoreDeprecations": "5.0",
-    "module": "nodenext",          // 输出 ESM 模块
-    "moduleResolution": "nodenext", // 配套的模块解析策略
-    "resolvePackageJsonExports": true,
+    "module": "commonjs",          // NestJS 标准: CommonJS
+    "moduleResolution": "node",    // 配套: Node 模块解析
     "esModuleInterop": true,
     "isolatedModules": true,
     "declaration": true,           // 生成 .d.ts 类型声明文件
@@ -15,12 +14,16 @@
     "target": "ES2023",
     "sourceMap": true,
     "outDir": "./dist",
+    "rootDir": "./src",
     "incremental": true,
+    "tsBuildInfoFile": "./dist/tsconfig.tsbuildinfo",
     "skipLibCheck": true,
     "strictNullChecks": true,      // 严格 null 检查
     "forceConsistentCasingInFileNames": true,
     "noImplicitAny": true,         // 禁止隐式 any
     "strictBindCallApply": true,
     "noFallthroughCasesInSwitch": true
-  }
+  },
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "dist", "web", "shared", "client", "adapters", "docs", "python"]
 }

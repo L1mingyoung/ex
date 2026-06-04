@@ -7,6 +7,7 @@ import { SessionsModule } from '../sessions/sessions.module';
 import { MessagesModule } from '../messages/messages.module';
 import { LlmModule } from '../llm/llm.module';
 import { MemoriesModule } from '../memories/memories.module';
+import { EmotionModule } from '../emotion/emotion.module';
 
 /**
  * 聊天模块 —— 系统的核心，编排一次完整的对话流程
@@ -25,6 +26,7 @@ import { MemoriesModule } from '../memories/memories.module';
     MessagesModule,
     LlmModule,
     MemoriesModule,
+    EmotionModule,
   ],
   controllers: [ChatController],
   providers: [ChatService],

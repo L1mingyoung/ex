@@ -3,11 +3,19 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Message, MessageRole } from './entities/message.entity';
 
+export interface CreateMessageInput {
+  sessionId: string;
+  role: MessageRole;
+  content: string;
+  emotionSnapshot?: Record<string, number | string> | null;
+}
+
 /**
  * 消息服务 —— 纯数据读写，不涉及业务逻辑
  *
  * 职责：
  *  - 保存用户消息和 AI 回复（create）
+ *  - 批量导入历史消息（createMany）
  *  - 读取最近 N 条消息，用于拼接到 LLM 上下文中（findRecent）
  *  - 统计消息数，用于判断是否触发滚动摘要（countBySession）
  */
@@ -23,10 +31,33 @@ export class MessagesService {
    * @param sessionId - 所属会话 UUID
    * @param role - 'user' | 'assistant'
    * @param content - 消息正文
+   * @param emotionSnapshot - jiwen 情绪快照
    */
-  create(sessionId: string, role: MessageRole, content: string) {
-    const message = this.messageRepo.create({ sessionId, role, content });
+  create(
+    sessionId: string,
+    role: MessageRole,
+    content: string,
+    emotionSnapshot?: Record<string, number | string> | null,
+  ) {
+    const message = this.messageRepo.create({
+      sessionId,
+      role,
+      content,
+      emotionSnapshot: emotionSnapshot ?? null,
+    });
     return this.messageRepo.save(message);
+  }
+
+  createMany(messages: CreateMessageInput[]) {
+    const entities = this.messageRepo.create(
+      messages.map((message) => ({
+        sessionId: message.sessionId,
+        role: message.role,
+        content: message.content,
+        emotionSnapshot: message.emotionSnapshot ?? null,
+      })),
+    );
+    return this.messageRepo.save(entities);
   }
 
   /**

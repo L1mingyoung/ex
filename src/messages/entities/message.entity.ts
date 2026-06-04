@@ -17,7 +17,7 @@ export class Message {
   content: string; // 消息正文
 
   @Column({ type: 'jsonb', nullable: true, name: 'emotion_snapshot' })
-  emotionSnapshot: Record<string, number> | null; // 情绪快照（后期接 jiwen 引擎）
+  emotionSnapshot: Record<string, number | string> | null; // 情绪快照（后期接 jiwen 引擎）
 
   @CreateDateColumn({ name: 'created_at' })
   createdAt: Date;

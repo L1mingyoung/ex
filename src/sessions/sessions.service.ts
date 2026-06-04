@@ -1,7 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { Session } from './entities/session.entity';
+import { ImportProfile, Session } from './entities/session.entity';
 
 @Injectable()
 export class SessionsService {
@@ -32,10 +32,25 @@ export class SessionsService {
     return this.findOne(id);
   }
 
-  async incrementMessageCount(id: string) {
-    await this.sessionRepo.increment({ id }, 'messageCount', 1);
-    // 同时更新 updatedAt
-    await this.sessionRepo.update(id, { updatedAt: new Date() });
+  async markSummarized(id: string, summary: string) {
+    await this.sessionRepo.update(id, {
+      summary,
+      messageCount: 0,
+      lastSummaryAt: new Date(),
+    });
+    return this.findOne(id);
+  }
+
+  async updateImportProfile(id: string, importProfile: ImportProfile) {
+    await this.sessionRepo.update(id, {
+      importProfile,
+      profileUpdatedAt: new Date(),
+    });
+    return this.findOne(id);
+  }
+
+  async incrementMessageCount(id: string, amount = 1) {
+    await this.sessionRepo.increment({ id }, 'messageCount', amount);
     return this.findOne(id);
   }
 

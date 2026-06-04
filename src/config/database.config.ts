@@ -14,7 +14,8 @@ export const AppDataSource = new DataSource({
   database: process.env.DB_NAME || 'companion',
   entities: [path.join(__dirname, '..', '**', '*.entity{.ts,.js}')],
   synchronize: false, // 生产必须 false，开发阶段用 migration 管理
-  migrations: [path.join(__dirname, '..', '..', 'migrations', '*{.ts,.js}')],
+  migrations: [path.join(__dirname, '..', 'migrations', '*{.ts,.js}')],
   migrationsRun: true, // 启动时自动跑 migration
-  logging: true, // 开发时打印 SQL，方便学习
+  logging: process.env.DB_LOGGING === 'true', // 开发时可在 .env 开启 SQL 日志
 });
+

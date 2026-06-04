@@ -1316,3 +1316,319 @@ git push -u origin main --force
 ---
 
 ## 环境快照
+
+---
+
+## 2026-06-04 | Day 8：稳定化修复
+
+### 1. 滚动摘要为什么之前不会触发
+
+原逻辑用 `session.updatedAt` 判断“距离上次摘要是否超过 1 小时”。但每次聊天结束都会更新会话，所以 `updatedAt` 总是很新，摘要检查几乎必然 return。
+
+修复后新增 `last_summary_at`：
+
+```typescript
+if (session.messageCount < 50) return;
+if (session.lastSummaryAt && session.lastSummaryAt > oneHourAgo) return;
+```
+
+摘要成功后调用 `markSummarized()`，同时写入 `summary`、清零 `message_count`、更新 `last_summary_at`。这样 `message_count` 表示“上次摘要之后的新消息数”，语义更准确。
+
+### 2. 为什么关闭 TypeORM synchronize
+
+`memory_chunks` 有 `embedding vector(768)` 字段，TypeORM Entity 没有映射这个字段。如果开启 `synchronize: true`，ORM 可能尝试把这个列删掉。现在改为：
+
+- `synchronize: false`
+- 启动时执行 `InitPgvectorSchema1710000000000`
+- migration 负责 `CREATE EXTENSION vector`、建表、建 HNSW 索引
+
+### 3. 真实 embedding 模型接入方式
+
+默认仍可用 Mock 快速联调：
+
+```bash
+MOCK_EMBEDDING=1 uv run uvicorn main:app --port 8000
+```
+
+真实模式先下载模型：
+
+```bash
+uv run python scripts/download_model.py
+uv run uvicorn main:app --port 8000
+```
+
+模型默认路径：`python/models/jina-embeddings-v2-base-zh.onnx`。如果放在别处，可设置 `EMBEDDING_MODEL_PATH`。
+
+### 4. 真实 ONNX 模型不是直接吃字符串
+
+下载 `jinaai/jina-embeddings-v2-base-zh` 后，实际 ONNX 输入节点是：
+
+```text
+input_ids: tensor(int64)
+attention_mask: tensor(int64)
+```
+
+所以不能把字符串直接丢给 ONNX Runtime。正确流程是：
+
+```text
+中文文本
+  -> tokenizer.json 分词
+  -> input_ids + attention_mask
+  -> ONNX Runtime 输出 last_hidden_state
+  -> attention mask mean pooling
+  -> L2 normalize
+  -> 768 维向量
+```
+
+验证命令：
+
+```powershell
+cd D:\Code\ex\python
+.\.venv\Scripts\python.exe -c "from embedder import Embedder; e=Embedder(); v=e.embed('你好世界'); print(len(v)); print(round(sum(x*x for x in v), 6))"
+```
+
+验证结果：
+
+```text
+768
+1.0
+```
+
+这说明真实 embedding 链路已经从“文件下载”推进到“可实际生成向量”。
+
+---
+
+## 2026-06-04 | Day 9：jiwen 情绪引擎 + 微信聊天记录导入
+
+### jiwen 的第一版为什么先用规则词典
+
+情绪识别会在每次用户发消息时执行。如果每次都额外调用 LLM，会让聊天延迟和成本上升。第一版先用轻量规则词典：
+
+```text
+用户文本 -> 关键词/标点特征 -> emotion_snapshot -> prompt 情绪层
+```
+
+`emotion_snapshot` 会保存到 `messages.emotion_snapshot`，例如：
+
+```json
+{
+  "joy": 0,
+  "sadness": 0,
+  "anxiety": 0.34,
+  "fatigue": 0.34,
+  "dominant": "anxiety",
+  "valence": 0.35,
+  "arousal": 0.48
+}
+```
+
+Prompt 新增一层：
+
+```text
+【jiwen 情绪状态】
+用户当前情绪：焦虑/担心（情绪倾向：偏消极，强度：中等）。回复时先接住情绪，再推进内容。
+```
+
+### 微信聊天记录导入的解析策略
+
+第一优先级支持微信导出/复制常见格式：
+
+```text
+2026-06-04 21:18:03 我
+今天加班好累
+2026-06-04 21:19:10 小雅
+辛苦啦，我陪你缓一下
+```
+
+解析逻辑：
+
+1. 识别“时间 + 发送人”作为消息头
+2. 后续多行作为同一条消息正文
+3. 遇到下一个消息头时 flush 上一条消息
+4. 根据 `userAliases` / `assistantAliases` 判定 role
+5. 写入 `messages`，用户消息同时写入 jiwen 快照
+
+导入 API：
+
+```text
+POST /api/import/chat-records
+```
+
+导入后后台继续做两件事：
+
+- 对导入记录分块提取长期记忆，写入 `memory_chunks`
+- 对最近导入内容生成摘要，写入 `session.summary`
+- 对导入记录提取长期人格/关系画像，写入 `sessions.import_profile`
+
+下一步可以增强：微信特殊消息过滤、图片/语音/撤回标记处理、导入预览确认、画像版本化。
+
+
+## 2026-06-04 学习笔记：导入后的长期人格/关系画像
+
+### 为什么需要“画像”，而不是只做摘要
+
+批量导入聊天记录有三种长期价值：
+
+1. 补历史消息：让数据库里有真实上下文。
+2. 生成滚动摘要：把最近导入内容压缩成一段中期上下文。
+3. 提取长期画像：从大量历史里抽出稳定的人格、偏好、沟通方式和关系状态。
+
+摘要更像“发生过什么”，画像更像“这个人长期是什么样、我们之间应该怎么相处”。后续聊天时，AI 不应该只知道用户昨天说了什么，还要知道用户长期的表达习惯、情绪模式、边界和希望被支持的方式。
+
+### 为什么画像放在 Session JSONB
+
+这次选择把画像放在 `sessions.import_profile`，而不是新建全局用户表或独立画像表。
+
+原因：
+
+- 当前项目还没有多用户系统，`Session` 是最清晰的关系边界。
+- 画像描述的是“当前用户和当前角色/会话”的关系，不一定适合全局复用。
+- JSONB 能先承载结构化数据，后续字段调整成本低。
+- ChatService 读取 session 时天然能拿到画像，不需要额外查询新表。
+
+代价也要记住：
+
+- JSONB 不适合复杂查询，比如“找出所有亲密度 high 的会话”。
+- 没有版本历史，后续画像被覆盖后不方便审计。
+- 如果未来支持多用户、多角色共享画像，可能需要迁移到 `relationship_profiles` 表。
+
+### 画像 schema 的含义
+
+`userPersona` 关注用户长期稳定特征：
+
+```json
+{
+  "stableFacts": ["稳定事实"],
+  "preferences": ["偏好、习惯、讨厌的事"],
+  "communicationStyle": ["表达风格、沟通节奏"],
+  "emotionalPatterns": ["反复出现的情绪模式"],
+  "boundaries": ["边界、禁忌、需要避免的方式"]
+}
+```
+
+`relationshipProfile` 关注用户和 AI/角色之间的关系：
+
+```json
+{
+  "relationshipTone": "整体互动语气",
+  "closenessLevel": "low | medium | high",
+  "trustSignals": ["信任或依赖的证据"],
+  "recurringTopics": ["反复出现的话题"],
+  "supportNeeds": ["用户期待的支持方式"],
+  "assistantRole": "AI 在关系里的角色"
+}
+```
+
+`evidence` 记录来源：
+
+```json
+{
+  "source": "import",
+  "messageCount": 120,
+  "generatedAt": "2026-06-04T..."
+}
+```
+
+这里的重点不是把画像做得很花，而是让它稳定、可解释、能被 prompt 使用。
+
+### 导入后的数据流
+
+```text
+POST /api/import/chat-records
+        |
+        v
+解析微信聊天记录 -> createMany(messages)
+        |
+        +--> 用户消息写入 emotion_snapshot（jiwen）
+        |
+        +--> setImmediate: extractMemoriesFromImported()
+        |       -> memory_chunks: fact / preference / emotion
+        |
+        +--> setImmediate: generateImportedSummary()
+        |       -> sessions.summary
+        |
+        +--> setImmediate: extractProfileFromImported()
+                -> sessions.import_profile
+                -> sessions.profile_updated_at
+                -> memory_chunks: 画像关键点
+```
+
+导入接口现在会返回：
+
+```json
+{
+  "memoryExtractionQueued": true,
+  "summaryQueued": true,
+  "profileExtractionQueued": true
+}
+```
+
+如果传入 `extractProfile: false`，就只导入消息，不自动生成画像。
+
+### 为什么画像也同步写入 memory_chunks
+
+画像保存在 session 里，方便整体注入 prompt；但 memory_chunks 是向量检索层，适合按当前问题召回局部相关信息。
+
+所以这次做了双写：
+
+- `stableFacts` -> `fact`
+- `preferences` / `boundaries` / `supportNeeds` -> `preference`
+- `emotionalPatterns` / `relationshipTone` -> `emotion`
+
+这样后续用户问到相关话题时，即使完整画像没有全部展开，向量检索也能把相关片段召回。
+
+### Prompt 接入位置
+
+ChatService 现在的长期上下文层次是：
+
+```text
+固定人格 basePrompt
+    ↓
+【你们之前的对话摘要】session.summary
+    ↓
+【长期人格/关系画像】session.importProfile
+    ↓
+【关于用户的记忆】memory_chunks 检索结果
+    ↓
+【jiwen 情绪状态】当前用户消息即时情绪
+```
+
+这个顺序的含义：
+
+- basePrompt 决定角色是谁。
+- summary 提供中期历史。
+- importProfile 提供长期人格和关系。
+- memory_chunks 提供当前问题相关的局部记忆。
+- jiwen 提供“此刻”的情绪状态。
+
+### 失败兜底
+
+画像提取是异步任务，不阻塞导入。这里有几个保护点：
+
+- 空导入不会触发画像任务。
+- LLM 返回纯 JSON 或 fenced JSON 都能解析。
+- LLM 返回非法 JSON 时只打印日志，不影响 messages 写入。
+- 画像最多截取有限条目，避免 prompt 被长列表撑爆。
+- memory 类型不扩展 enum，避免迁移变复杂。
+
+### 本次验证
+
+已跑：
+
+```text
+npm run build
+npm test -- --runInBand
+```
+
+新增测试覆盖：
+
+- 微信格式导入后默认返回 `profileExtractionQueued: true`
+- fenced JSON 能被解析成 `ImportProfile`
+
+### 还可以继续学/继续做什么
+
+1. 手动重建画像接口：例如 `POST /api/import/chat-records/:sessionId/rebuild-profile`。
+2. 画像版本化：每次导入生成一个版本，避免覆盖旧画像。
+3. 证据追踪：每条画像关联 source message ids，方便解释“为什么这么判断”。
+4. 置信度字段：区分明确事实、强推断、弱推断。
+5. 独立画像表：多用户、多角色、多会话后，把 `import_profile` 迁移到 `relationship_profiles`。
