@@ -901,10 +901,12 @@ powershell -Command "Stop-Process -Id 27476 -Force"
 | TypeORM | 1.0.0 | - | ESM-only |
 | Python | 3.12.13 (uv) | - | 通过 uv 管理 |
 | uv | 0.11.7 | - | Python 包管理器 |
-| FastAPI | 0.136.3 | 8000 | Mock 模式运行 |
-| PostgreSQL + pgvector | 15 (Docker) | 54321 | 容器名 `companion-pg`，4 张表 |
+| FastAPI | 0.136.3 | 8000 | Mock 模式 |
+| PostgreSQL + pgvector | 15 (Docker) | 54321 | 4 张表 |
 | Docker Desktop | 29.4.0 | - | |
-| NestJS 开发服务器 | - | 3000 | `npm run start:dev` |
+| NestJS + Web 前端 | - | 3000 | API + 静态文件 |
+| Git | 2.41.0 | - | |
+| GitHub | - | - | https://github.com/L1mingyoung/ex |
 
 ### 数据库表
 
@@ -1234,4 +1236,83 @@ if (session.updatedAt > oneHourAgo) return;     // 距离上次不够 1 小时
 
 ---
 
-## 环境快照（Day 6 更新）
+## 2026-06-04 | Day 7：SSE 流式 + Web 前端 + 适配器
+
+### SSE 流式响应
+
+**为什么需要流式？** 同步模式下用户发送消息后要等 3-8 秒才能看到完整回复。流式模式下 AI 每生成一个字就推送一次，体验更即时。
+
+**实现方式：**
+
+1. **LlmService.chatStream()** — 用 Node.js 原生 `https.request()` 连接 DeepSeek，逐 chunk 解析 SSE 数据：
+   ```
+   data: {"choices":[{"delta":{"content":"你"}}]}  → emit "你"
+   data: {"choices":[{"delta":{"content":"好"}}]}  → emit "好"
+   data: [DONE]                                    → complete
+   ```
+
+2. **ChatService.handleMessageStream()** — 返回 RxJS `Observable<string>`，流结束后异步保存回复
+
+3. **ChatController** — `POST /api/chat/:id/stream`，设置 `Content-Type: text/event-stream`
+
+### Web 聊天前端
+
+**设计原则：** API 层（`api.js`）纯函数无 DOM 依赖，UI 层（`chat.js`）只做展示。切换平台只需换 API 层的 `fetch()` 实现。
+
+```
+client/
+├── index.html          # 侧边栏 + 聊天区布局
+├── css/style.css       # 深色侧边栏 + 移动端响应式
+└── js/
+    ├── api.js          # 纯 HTTP 调用（fetch + SSE 解析）
+    └── chat.js         # UI 逻辑（DOM 操作）
+```
+
+**功能清单：**
+- 左侧：角色列表（创建/选择/编辑）、会话列表（新建/切换/删除）
+- 右侧：消息区（自动滚动）、输入区（Enter 发送）、流式逐字显示
+- 状态指示：在线 / 回复中 / 错误
+- 移动端适配：小屏自动切换为上下布局
+
+### 角色编辑功能
+
+`PUT /api/characters/:id` — 修改角色名称/人格/模型。前端角色列表旁有 ✎ 按钮。
+
+### 平台适配器
+
+```
+adapters/
+├── miniprogram/api.js      # wx.request() 替换 fetch()
+├── miniprogram/api-uni.js  # uni.request() 跨端统一
+└── qq-bot/adapter.js       # QQ Bot WebSocket → HTTP API
+```
+
+所有适配器函数签名相同，切换平台只需改 `import` 路径。
+
+### 接入聊天软件分析
+
+| 平台 | 接入方式 | 流式 | 难度 |
+|------|---------|------|------|
+| Web | fetch + SSE | ✅ | ⭐ 已完成 |
+| 微信小程序 | wx.request | ❌ | ⭐⭐ 已有适配器 |
+| uni-app | uni.request | ❌ | ⭐⭐ 已有适配器 |
+| React Native | fetch | ✅ | ⭐ 可直接用 api.js |
+| QQ Bot | WebSocket | ❌ | ⭐⭐ 需 SDK |
+| Telegram Bot | Webhook | ❌ | ⭐ 简单 HTTP |
+
+**核心结论：** NestJS API 是唯一数据源，所有平台接入 = 写 HTTP 适配器（~50行），不碰业务逻辑。
+
+### GitHub 发布
+
+```bash
+git init && git add -A
+git commit -m "feat: AI Companion backend + web chat"
+git remote add origin https://github.com/L1mingyoung/ex.git
+git push -u origin main --force
+```
+
+54 个文件已上传，`.env` 通过 `.gitignore` 排除。
+
+---
+
+## 环境快照
