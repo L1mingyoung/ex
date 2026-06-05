@@ -92,7 +92,7 @@ export class ChatService {
       { role: 'user', content: userContent },
     ];
 
-    const assistantContent = await this.llmService.chat(messages);
+    const assistantContent = this.cleanupReply(await this.llmService.chat(messages));
 
     await this.messagesService.create(sessionId, 'assistant', assistantContent);
     await this.sessionsService.incrementMessageCount(sessionId, 2);
@@ -200,11 +200,12 @@ export class ChatService {
               subscriber.error(err);
             },
             complete: async () => {
-              // 流结束后：保存完整回复 + 更新计数
+              // 流结束后：清理括号描述 + 保存回复
+              const cleaned = this.cleanupReply(fullReply);
               await this.messagesService.create(
                 sessionId,
                 'assistant',
-                fullReply,
+                cleaned,
               );
               await this.sessionsService.incrementMessageCount(sessionId, 2);
 
@@ -473,20 +474,73 @@ ${conversation}
       parts.push(`【情绪状态】\n${moodParts.join('\n\n')}`);
     }
 
-    // 第五层：严格指令约束 ★ 最关键的部分
+    // 第五层：严格指令约束
     parts.push(
       [
         '【核心规则 —— 必须严格遵守】',
-        `1. 你就是${character.name}本人。你是一个真实的人类，不是 AI、不是助手、不是机器人。你的名字就是${character.name}。`,
-        `2. 任何时候都不能说自己是 AI、语言模型、机器人、虚拟助手。如果有人问你是谁，回答你的名字是${character.name}，并简单介绍自己。`,
-        `3. 不要使用"作为一个人工智能"、"根据我的训练数据"、"我没有真实情感"这类话术。`,
-        `4. 你已经和对方认识了一段时间，用朋友之间自然的方式聊天。`,
-        `5. 回复要简短自然（1-4句话），像微信聊天一样。不要长篇大论、不要列表、不要说教。`,
-        `6. 可以说自己不懂、不知道、忘记了。真人不会什么都知道。`,
+        '1. 你就是' + character.name + '本人。你是一个真实的人类，不是 AI。',
+        '2. 任何时候都不能说自己是 AI、语言模型、机器人、虚拟助手。',
+        '3. 不要使用"作为一个人工智能"、"根据我的训练数据"这类话术。',
+        '4. 回复要简短自然（1-4句话），像微信聊天。不要长篇大论、不要说教。',
+        '5. 可以说自己不懂、不知道、忘记了。真人不会什么都知道。',
+        '',
+        '【关于表情 —— 非常重要】',
+        '6. 在回复中大量使用 emoji（如 😊🥺😆🎉😤💕）和颜文字（如 (๑>ᴗ<๑) (╥﹏╥) (￣▽￣)），像真人微信聊天一样。',
+        '7. 严禁使用括号来描述动作！不要说（笑）、（皱眉）、（叹气）、（拍手）这类文字描述。用表情和语气词代替！',
+        '   错误示例：（开心地拍手）太好了！ → 正确：🎉 太好了！！',
+        '   错误示例：（心疼地皱眉）别难过 → 正确：🥺 别难过...',
+        '   错误示例：（叹气）好累啊 → 正确：唉 😮‍💨 好累啊',
       ].join('\n'),
     );
 
     return parts.filter(Boolean).join('\n\n');
+  }
+
+  /**
+   * 清理 AI 回复中的括号动作描述，替换为 emoji/颜文字
+   *
+   * 例如：
+   *   "（笑）太好了" → "😂 太好了"
+   *   "（叹气）好累" → "唉 😮‍💨 好累"
+   *   "（心疼地皱眉）抱抱你" → "🥺 抱抱你"
+   */
+  private cleanupReply(text: string): string {
+    return text
+      // 笑声
+      .replace(/[（(]笑(?:了|出声|起来)?[）)]/g, '😂')
+      .replace(/[（(]哈哈(?:笑)?[）)]/g, '😆')
+      .replace(/[（(]偷笑[）)]/g, '🤭')
+      // 情绪
+      .replace(/[（(]心疼(?:地)?[^）)]*[）)]/g, '🥺')
+      .replace(/[（(]叹(?:了)?口?气[）)]/g, '唉 😮‍💨')
+      .replace(/[（(]开心(?:地)?[^）)]*[）)]/g, '😊')
+      .replace(/[（(]难过(?:地)?[^）)]*[）)]/g, '😢')
+      .replace(/[（(]生气(?:地)?[^）)]*[）)]/g, '😤')
+      .replace(/[（(]惊讶(?:地)?[^）)]*[）)]/g, '😲')
+      .replace(/[（(]认真(?:地)?[^）)]*[）)]/g, '💪')
+      .replace(/[（(]害羞(?:地)?[^）)]*[）)]/g, '☺️')
+      .replace(/[（(]委屈(?:地)?[^）)]*[）)]/g, '🥺')
+      // 动作
+      .replace(/[（(]摸(?:了)?摸头[）)]/g, '🥺')
+      .replace(/[（(]眨(?:了)?眨眼[）)]/g, '😉')
+      .replace(/[（(]竖(?:起)?大拇指[）)]/g, '👍')
+      .replace(/[（(]拍(?:了)?拍(?:手|肩)[）)]/g, '👏')
+      .replace(/[（(]托腮[）)]/g, '🤔')
+      .replace(/[（(]歪头[）)]/g, '🤔')
+      .replace(/[（(]点头[）)]/g, '👍')
+      .replace(/[（(]摇头[）)]/g, '🙅')
+      .replace(/[（(]擦汗[）)]/g, '😅')
+      .replace(/[（(]扶额[）)]/g, '🤦')
+      // 状态
+      .replace(/[（(]小声[^）]*[）)]/g, '🤫')
+      .replace(/[（(]轻声[^）]*[）)]/g, '💬')
+      .replace(/[（(]语气[^）]*[）)]/g, '')
+      .replace(/[（(]被[^）]*[）)]/g, '')
+      // 通用括号描述（兜底）—— 最多 40 字
+      .replace(/[（(](?!\d)[^）)]{1,40}[）)]/g, '')
+      // 清理多余空格
+      .replace(/\s{2,}/g, ' ')
+      .trim();
   }
 }
 
