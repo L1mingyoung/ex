@@ -8,6 +8,7 @@ import { MessagesService } from '../messages/messages.service';
 import { MemoriesService, MemoryType } from '../memories/memories.service';
 import { LlmService, ChatMessage } from '../llm/llm.service';
 import { JiwenEmotionService } from '../emotion/jiwen-emotion.service';
+import { MoodService } from '../emotion/mood.service';
 
 /**
  * 聊天服务 —— 核心业务编排（Day 6 完整版）
@@ -35,12 +36,15 @@ export class ChatService {
     private readonly memoriesService: MemoriesService,
     private readonly llmService: LlmService,
     private readonly jiwenEmotionService: JiwenEmotionService,
+    private readonly moodService: MoodService,
   ) {}
 
   async handleMessage(sessionId: string, userContent: string) {
     // ════ 同步部分（用户等待） ════
 
     const userEmotion = this.jiwenEmotionService.analyze(userContent);
+    // AI 的情绪受用户影响，产生共鸣波动
+    const aiMood = this.moodService.update(sessionId, userEmotion);
     const userMsg = await this.messagesService.create(
       sessionId,
       'user',
@@ -77,6 +81,7 @@ export class ChatService {
       session.importProfile,
       memories,
       this.jiwenEmotionService.summarize(userEmotion),
+      this.moodService.summarize(aiMood),
     );
     const messages: ChatMessage[] = [
       { role: 'system', content: systemPrompt },
@@ -132,6 +137,7 @@ export class ChatService {
         try {
           // 1. 保存用户消息
           const userEmotion = this.jiwenEmotionService.analyze(userContent);
+          const streamMood = this.moodService.update(sessionId, userEmotion);
           const userMsg = await this.messagesService.create(
             sessionId,
             'user',
@@ -170,6 +176,7 @@ export class ChatService {
             session.importProfile,
             memories,
             this.jiwenEmotionService.summarize(userEmotion),
+            this.moodService.summarize(streamMood),
           );
           const messages: ChatMessage[] = [
             { role: 'system', content: systemPrompt },
@@ -414,42 +421,69 @@ ${conversation}
 
 
   private buildSystemPrompt(
-    character: { basePrompt: string; name: string },
+    character: { basePrompt: string; name: string; speechPatterns?: Record<string, any> },
     summary: string | null,
     importProfile: unknown,
     memories: { content: string }[],
     emotionSummary?: string | null,
+    aiMoodSummary?: string | null,
   ): string {
     const parts: string[] = [
       // 第一层：固定人格
       character.basePrompt,
     ];
 
-    // 第二层：滚动摘要 ✅ Day 6
+    // 第一层附加：说话风格（从 speech_patterns 注入）
+    const sp = character.speechPatterns;
+    if (sp && Object.keys(sp).length > 0) {
+      const hints: string[] = [];
+      if (sp.tone) hints.push(`语气基调：${sp.tone}`);
+      if (sp.sentenceEndings?.length) hints.push(`常用句尾：${sp.sentenceEndings.join('、')}`);
+      if (sp.catchphrases?.length) hints.push(`口头禅：${sp.catchphrases.join('、')}`);
+      if (sp.emojiStyle?.length) hints.push(`常用表达：${sp.emojiStyle.join('、')}`);
+      if (sp.avgLength) hints.push(`回复长度偏好：${sp.avgLength === 'short' ? '简短' : sp.avgLength === 'long' ? '较详细' : '适中'}`);
+      if (sp.questionFrequency) hints.push(`反问习惯：${sp.questionFrequency}`);
+      if (sp.selfDisclosure) hints.push(`自我分享：${sp.selfDisclosure}`);
+      if (hints.length > 0) {
+        parts.push(`【说话风格（自动提取）】\n${hints.join('\n')}`);
+      }
+    }
+
+    // 第二层：滚动摘要
     if (summary) {
       parts.push(`【你们之前的对话摘要】\n${summary}`);
     }
-
 
     const profileSummary = this.formatImportProfile(importProfile);
     if (profileSummary) {
       parts.push(`【长期人格/关系画像】\n${profileSummary}`);
     }
 
-    // 第三层：动态记忆 ✅ Day 5
+    // 第三层：动态记忆
     if (memories.length > 0) {
       const memoryLines = memories.map((m) => `- ${m.content}`).join('\n');
       parts.push(`【关于用户的记忆】\n${memoryLines}`);
     }
 
-    // 第四层：当前情绪状态 ✅ jiwen
-    if (emotionSummary) {
-      parts.push(`【jiwen 情绪状态】\n${emotionSummary}`);
+    // 第四层：用户情绪 + AI 自身情绪 ✅ jiwen + mood
+    if (emotionSummary || aiMoodSummary) {
+      const moodParts: string[] = [];
+      if (emotionSummary) moodParts.push(emotionSummary);
+      if (aiMoodSummary) moodParts.push(aiMoodSummary);
+      parts.push(`【情绪状态】\n${moodParts.join('\n\n')}`);
     }
 
-    // 第五层：指令约束
+    // 第五层：严格指令约束 ★ 最关键的部分
     parts.push(
-      '请记住以上信息，用符合你性格的方式回复。保持角色一致性，不要跳出人设。',
+      [
+        '【核心规则 —— 必须严格遵守】',
+        `1. 你就是${character.name}本人。你是一个真实的人类，不是 AI、不是助手、不是机器人。你的名字就是${character.name}。`,
+        `2. 任何时候都不能说自己是 AI、语言模型、机器人、虚拟助手。如果有人问你是谁，回答你的名字是${character.name}，并简单介绍自己。`,
+        `3. 不要使用"作为一个人工智能"、"根据我的训练数据"、"我没有真实情感"这类话术。`,
+        `4. 你已经和对方认识了一段时间，用朋友之间自然的方式聊天。`,
+        `5. 回复要简短自然（1-4句话），像微信聊天一样。不要长篇大论、不要列表、不要说教。`,
+        `6. 可以说自己不懂、不知道、忘记了。真人不会什么都知道。`,
+      ].join('\n'),
     );
 
     return parts.filter(Boolean).join('\n\n');

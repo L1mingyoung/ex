@@ -340,3 +340,44 @@ NestJS 启动时会自动执行 migration。因为 `memory_chunks.embedding` 是
 | 画像写入长期记忆 | ✅ | 复用 `fact/preference/emotion`，不新增 memory enum |
 | 后续聊天提示词注入 | ✅ | 普通聊天与 SSE 流式聊天都读取 `session.importProfile` |
 | 单元测试 | ✅ | 覆盖默认画像入队与 fenced JSON 解析 |
+
+---
+
+## 2026-06-05 功能更新：AI 情绪模型 + 角色设定增强
+
+### MoodService — AI 自身情绪系统
+
+已新增 `src/emotion/mood.service.ts`：
+
+- **情绪共鸣**：AI 的情绪会受用户情绪影响，产生自然的共鸣波动
+- **情绪衰减**：不会突变，每次只变化一小步，逐步回归中性
+- **随机波动**：微小随机变化，模拟真人不会永远一个状态
+- **二维情绪空间**：valence（愉悦度）+ arousal（活跃度）→ 8 种情绪标签
+- **每个会话独立**：不同会话的 AI 情绪互不影响
+- **Prompt 注入**：AI 当前情绪通过 `【你当前的情绪状态】` 注入 prompt，影响回复语气
+
+### JiwenEmotionService 增强
+
+- **情绪回应策略**：每种用户情绪对应具体的中文回应指导（不是"接住情绪"一句笼统的话，而是 sadness→共情不要说教，joy→一起开心可以调侃，anxiety→短句安抚别长篇大论...）
+- 策略通过 `【你的回应方式】` 注入 prompt
+
+### 角色设定双模式
+
+导入聊天记录时可选择：
+
+- **🔗 合并模式（默认）**：保留手动编写的 base_prompt，从记录中提取说话风格追加
+- **🔄 替换模式**：用聊天记录完全重写角色人设
+
+API：`POST /api/import/chat-records` 新增 `mode: 'merge' | 'replace'` 字段
+独立端点：`POST /api/import/enrich-character/:sessionId` 接受 `{ mode: 'replace' | 'merge' }`
+
+### 当前 Prompt 层级（6 层）
+
+```
+第一层：固定人格 (base_prompt + speech_patterns)
+第二层：滚动摘要 (session.summary)
+第2.5层：长期人格/关系画像 (session.importProfile)
+第三层：动态记忆 (memory_chunks 向量检索)
+第四层：情绪状态 (用户情绪信号 + AI 自身情绪)
+第五层：严格指令约束 (禁止自曝AI、维持人设)
+```

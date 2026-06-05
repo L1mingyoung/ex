@@ -1,4 +1,7 @@
 import { Injectable } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import { Character } from '../characters/entities/character.entity';
 import { Message, MessageRole } from '../messages/entities/message.entity';
 import { CreateMessageInput, MessagesService } from '../messages/messages.service';
 import { ImportProfile } from '../sessions/entities/session.entity';
@@ -16,6 +19,8 @@ export interface ImportChatRecordsDto {
   triggerMemoryExtraction?: boolean;
   generateSummary?: boolean;
   extractProfile?: boolean;
+  /** 角色设定模式：'replace' 完全重写 | 'merge' 保留手动设定+追加风格（默认） */
+  mode?: 'replace' | 'merge';
 }
 
 interface ParsedRecord {
@@ -43,6 +48,8 @@ export interface ImportChatRecordsResult {
 @Injectable()
 export class RecordsImportService {
   constructor(
+    @InjectRepository(Character)
+    private readonly characterRepo: Repository<Character>,
     private readonly sessionsService: SessionsService,
     private readonly messagesService: MessagesService,
     private readonly memoriesService: MemoriesService,
@@ -98,6 +105,13 @@ export class RecordsImportService {
       setImmediate(() => {
         this.extractProfileFromImported(dto.sessionId, saved).catch((err: Error) => {
           console.error('[Import Profile Extract]', err.message);
+        });
+      });
+      // 同时提取角色说话风格
+      setImmediate(() => {
+        // 默认 merge：保留手动设定，从记录中追加说话风格
+        this.enrichCharacterProfile(dto.sessionId, dto.mode ?? 'merge').catch((err: Error) => {
+          console.error('[Enrich Character]', err.message);
         });
       });
     }
@@ -453,6 +467,134 @@ JSON：`;
   private normalizeCloseness(value: unknown): 'low' | 'medium' | 'high' | '' {
     if (value === 'low' || value === 'medium' || value === 'high') return value;
     return '';
+  }
+
+  /**
+   * 从导入的聊天记录中提取角色的说话风格，更新 character.base_prompt
+   *
+   * 和 extractProfileFromImported 不同：
+   *   - extractProfileFromImported 分析 USER → 存到 session.import_profile（用户画像）
+   *   - enrichCharacterProfile 分析 ASSISTANT → 更新 character.base_prompt（角色设定）
+   */
+  async enrichCharacterProfile(
+    sessionId: string,
+    mode: 'replace' | 'merge' = 'replace',
+  ): Promise<{
+    characterId: string;
+    generatedPrompt: string | null;
+    speechPatterns: Record<string, any>;
+  } | null> {
+    const session = await this.sessionsService.findOne(sessionId);
+    const character = await this.characterRepo.findOne({
+      where: { id: session.characterId },
+    });
+    if (!character) throw new Error('角色不存在');
+
+    // 取 assistant 的消息（最多 200 条）
+    const assistantMsgs = await this.messagesService.findByRole(sessionId, 'assistant', 200);
+    if (assistantMsgs.length < 5) {
+      console.log('[Enrich Character] 角色发言不足 5 条，跳过');
+      return null;
+    }
+
+    const samples = assistantMsgs
+      .map((m) => m.content)
+      .filter((c) => c.length >= 5)
+      .slice(0, 80);
+
+    const transcript = samples.map((c, i) => `${i + 1}. ${c}`).join('\n');
+
+    const prompt = `你需要从以下聊天记录中还原"${character.name}"这个人的完整人格和说话方式。
+
+注意：这里的"${character.name}"是 AI 需要扮演的角色。你需要从 TA 的发言中提取 TA 是怎么说话、什么性格、有什么习惯。
+
+请生成一个完整的角色人设 JSON（只输出 JSON）：
+
+{
+  "basePrompt": "【角色设定】\\n...(从记录中推断 TA 的年龄、身份、性格，用第三人称写)\\n\\n【说话风格】\\n- 语气风格（轻松/温柔/活泼/冷静...）\\n- 句尾习惯（常用什么语气词：呢/呀/嘛/啦...）\\n- 聊天节奏（爱反问/爱分享/话多/话少）\\n- 表达特点（爱用叠词/爱吐槽/爱玩梗...）\\n- 常见的口语习惯和口头禅\\n\\n【情感表达】\\n- 开心时怎么说话\\n- 安慰人时怎么说话\\n- 生气或低落时怎么说话\\n\\n【聊天风格总结】\\n一段概括 TA 聊天方式的描述，包含模仿 TA 语气的示例对话",
+  "speechPatterns": {
+    "sentenceEndings": ["常用的句尾语气词"],
+    "catchphrases": ["高频口头禅"],
+    "emojiStyle": ["常用表情/符号"],
+    "avgLength": "short | medium | long",
+    "tone": "温柔 | 活泼 | 幽默 | 冷淡 | 理性 | 傲娇 | 元气",
+    "questionFrequency": "经常反问 | 偶尔反问 | 基本不问",
+    "selfDisclosure": "经常分享 | 偶尔分享 | 很少分享"
+  }
+}
+
+要求：
+- basePrompt 要完整、可直接用作角色人设，200-500 字
+- 只从聊天记录中提取，不要编造
+- 示例对话里要体现 TA 的真实说话方式
+- 如果记录中 TA 有特定的口癖/梗/惯用表达，一定要写进说话风格
+- 写成"扮演指南"的风格——让人看了就知道怎么模仿 TA 说话
+
+分析材料（${character.name}的发言，共 ${samples.length} 条）：
+${transcript}`;
+
+    const raw = await this.llmService.chat(
+      [{ role: 'user', content: prompt }],
+      { temperature: 0.2, maxTokens: 1500 },
+    );
+
+    let parsed: Record<string, any>;
+    try {
+      const jsonText = this.extractJsonText(raw);
+      if (!jsonText) throw new Error('No JSON found');
+      parsed = JSON.parse(jsonText);
+    } catch {
+      console.error('[Enrich Character] JSON 解析失败:', raw.substring(0, 200));
+      return null;
+    }
+
+    // --- 应用生成的设定 ---
+    const generatedPrompt = parsed?.basePrompt;
+    const patterns = parsed?.speechPatterns;
+
+    if (mode === 'replace') {
+      // 模式 1：完全替换 —— 用聊天记录生成完整人设
+      if (generatedPrompt && typeof generatedPrompt === 'string' && generatedPrompt.length >= 30) {
+        await this.characterRepo.update(character.id, {
+          basePrompt: generatedPrompt,
+        } as any);
+        console.log(`[Enrich Character] ${character.name} 人设已自动生成（${generatedPrompt.length}字）`);
+      }
+    } else {
+      // 模式 2：合并 —— 保留手动设定，追加从记录分析出的风格
+      const tone = patterns?.tone;
+      const endings = patterns?.sentenceEndings?.join('、');
+      const catchphrases = patterns?.catchphrases?.join('、');
+      const styleLines: string[] = [];
+      if (tone) styleLines.push(`- 语气基调：${tone}`);
+      if (endings) styleLines.push(`- 常用句尾：${endings}`);
+      if (catchphrases) styleLines.push(`- 口头禅：${catchphrases}`);
+      if (patterns?.avgLength) styleLines.push(`- 回复长度：${patterns.avgLength}`);
+
+      if (styleLines.length > 0) {
+        const current = character.basePrompt || '';
+        // 移除旧的自动提取部分，追加新的
+        const cleaned = current.replace(/\n\n【从聊天记录提取的说话风格】[\s\S]*$/, '');
+        const merged = cleaned + '\n\n【从聊天记录提取的说话风格】\n' + styleLines.join('\n');
+        await this.characterRepo.update(character.id, {
+          basePrompt: merged,
+        } as any);
+        console.log(`[Enrich Character] ${character.name} 手动设定已保留，风格已追加`);
+      }
+    }
+
+    // speech_patterns 始终更新
+    if (patterns && typeof patterns === 'object') {
+      await this.characterRepo.update(character.id, {
+        speechPatterns: patterns,
+      } as any);
+    }
+
+    return {
+      characterId: character.id,
+      generatedPrompt: generatedPrompt || null,
+      speechPatterns: patterns || {},
+    };
   }
 
   private chunk<T>(items: T[], size: number): T[][] {

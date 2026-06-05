@@ -80,4 +80,13 @@ export class MessagesService {
   async countBySession(sessionId: string): Promise<number> {
     return this.messageRepo.count({ where: { sessionId } });
   }
+
+  /** 按角色取消息（用于分析说话风格） */
+  async findByRole(sessionId: string, role: MessageRole, limit = 200): Promise<Message[]> {
+    return this.messageRepo.find({
+      where: { sessionId, role },
+      order: { createdAt: 'DESC' },
+      take: limit,
+    });
+  }
 }

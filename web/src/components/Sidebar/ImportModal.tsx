@@ -26,6 +26,7 @@ export default function ImportModal({ onClose }: ImportModalProps) {
   const [generateSummary, setGenerateSummary] = useState(true);
   const [extractProfile, setExtractProfile] = useState(true);
 
+  const [mode, setMode] = useState<'merge' | 'replace'>('merge');
   const [importing, setImporting] = useState(false);
   const [result, setResult] = useState<ImportChatRecordsResult | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -55,6 +56,7 @@ export default function ImportModal({ onClose }: ImportModalProps) {
         triggerMemoryExtraction: triggerMemory,
         generateSummary,
         extractProfile,
+        mode,
       });
       setResult(res);
       await loadSessions();
@@ -134,6 +136,33 @@ export default function ImportModal({ onClose }: ImportModalProps) {
               默认已包含: ai、assistant、bot、小雅
             </span>
           </div>
+        </div>
+
+        {/* 角色设定模式 */}
+        <div className="import-options">
+          <label className="import-radio-label">角色设定处理方式：</label>
+          <label className="import-radio">
+            <input
+              type="radio"
+              name="mode"
+              value="merge"
+              checked={mode === 'merge'}
+              onChange={() => setMode('merge')}
+              disabled={importing}
+            />
+            🔗 合并模式 — 保留手动设定，从记录追加说话风格
+          </label>
+          <label className="import-radio">
+            <input
+              type="radio"
+              name="mode"
+              value="replace"
+              checked={mode === 'replace'}
+              onChange={() => setMode('replace')}
+              disabled={importing}
+            />
+            🔄 替换模式 — 用聊天记录完全重写角色人设
+          </label>
         </div>
 
         {/* 选项 */}

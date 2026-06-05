@@ -133,6 +133,7 @@ export interface ImportChatRecordsPayload {
   triggerMemoryExtraction?: boolean;
   generateSummary?: boolean;
   extractProfile?: boolean;
+  mode?: 'replace' | 'merge';
 }
 
 export interface ImportPreviewRecord {

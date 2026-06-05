@@ -22,7 +22,8 @@ const WEB_DIST = join(__dirname, '..', 'web', 'dist');
     // 生产部署：先执行 npm run build:web，再启动后端，自动服务 web/dist/
     ServeStaticModule.forRoot({
       rootPath: existsSync(WEB_DIST) ? WEB_DIST : join(__dirname, '..', 'web', 'dist'),
-      exclude: ['/api/(.*)'], // API 路由不走静态文件
+      serveRoot: '/',       // 从根路径提供静态文件
+      // exclude 不设置：NestJS 路由优先于静态文件
       serveStaticOptions: {
         index: ['index.html'], // SPA fallback
       },
