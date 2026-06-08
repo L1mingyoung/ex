@@ -1,0 +1,16 @@
+node_modules
+dist
+web/node_modules
+web/dist
+python/.venv
+python/__pycache__
+python/**/*.pyc
+python/models/*.onnx
+exports
+coverage
+pgdata
+.git
+.env
+*.log
+tsconfig.build.tsbuildinfo
+web/tsconfig.tsbuildinfo

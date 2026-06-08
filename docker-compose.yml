@@ -1,0 +1,62 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: companion-postgres
+    environment:
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
+      POSTGRES_DB: ${DB_NAME:-companion}
+    ports:
+      - "${DB_PORT:-54321}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres} -d ${DB_NAME:-companion}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  embedding:
+    build:
+      context: ./python
+    container_name: companion-embedding
+    environment:
+      MOCK_EMBEDDING: ${MOCK_EMBEDDING:-0}
+      EMBEDDING_MODEL_PATH: ${EMBEDDING_MODEL_PATH:-/app/models/jina-embeddings-v2-base-zh.onnx}
+      EMBEDDING_TOKENIZER_PATH: ${EMBEDDING_TOKENIZER_PATH:-/app/models/tokenizer.json}
+    ports:
+      - "${EMBEDDING_PORT:-8000}:8000"
+    volumes:
+      - ./python/models:/app/models:ro
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+
+  api:
+    build:
+      context: .
+    container_name: companion-api
+    environment:
+      NODE_ENV: production
+      PORT: ${PORT:-3000}
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: ${DB_USER:-postgres}
+      DB_PASSWORD: ${DB_PASSWORD:-postgres}
+      DB_NAME: ${DB_NAME:-companion}
+      DB_LOGGING: ${DB_LOGGING:-false}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY}
+      PYTHON_EMBED_URL: http://embedding:8000
+    ports:
+      - "${PORT:-3000}:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      embedding:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  postgres_data:

@@ -7,6 +7,7 @@ python/.venv/
 
 # 编译产物
 dist/
+__pycache__/
 
 # 增量编译缓存（可能被误删 dist/ 后导致编译跳过）
 *.tsbuildinfo
@@ -27,3 +28,5 @@ pgdata/
 
 # Local exported chat records
 exports/
+.env.docker
+postgres_data/
