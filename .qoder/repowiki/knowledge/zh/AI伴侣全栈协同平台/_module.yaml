@@ -20,6 +20,7 @@ scope:
     - .qoder\repowiki\knowledge\zh\AI伴侣全栈协同平台\架构设计.md
     - .qoder\repowiki\knowledge\zh\AI伴侣全栈协同平台\概述.md
     - .qoder\repowiki\knowledge\zh\AI伴侣全栈协同平台\特殊配置与命令.md
+    - .qoder\repowiki\knowledge\zh\AI伴侣全栈协同平台\编码规范.md
     - .qoder\repowiki\knowledge\zh\AI伴侣后端服务\_module.yaml
     - .qoder\repowiki\knowledge\zh\AI伴侣后端服务\应用启动与核心配置\_module.yaml
     - .qoder\repowiki\knowledge\zh\AI伴侣后端服务\应用启动与核心配置\技术栈.md
@@ -70,6 +71,7 @@ scope:
     - .qoder\repowiki\zh\content\后端服务详解\聊天服务模块\聊天服务模块.md
     - .qoder\repowiki\zh\content\后端服务详解\角色管理系统.md
     - .qoder\repowiki\zh\content\后端服务详解\记忆存储模块.md
+    - .qoder\repowiki\zh\content\多平台适配器\QQ Bot 集成指南.md
     - .qoder\repowiki\zh\content\多平台适配器\QQ机器人适配器.md
     - .qoder\repowiki\zh\content\多平台适配器\Telegram适配器.md
     - .qoder\repowiki\zh\content\多平台适配器\多平台适配器.md
@@ -103,6 +105,7 @@ scope:
     - .qoder\repowiki\zh\content\部署与运维\生产环境部署.md
     - .qoder\repowiki\zh\content\部署与运维\监控与日志管理.md
     - .qoder\repowiki\zh\content\部署与运维\部署与运维.md
+    - .qoder\repowiki\zh\content\部署与运维\部署指南.md
     - .qoder\repowiki\zh\content\项目概述\学习笔记.md
     - .qoder\repowiki\zh\content\项目概述\开发环境搭建.md
     - .qoder\repowiki\zh\content\项目概述\技术栈概览.md
@@ -128,6 +131,8 @@ scope:
     - adapters\miniprogram\api.js
     - adapters\qq-bot\adapter.js
     - adapters\qq-bot\index.js
+    - deploy.bat
+    - docker-compose.prod.yml
     - docker-compose.yml
     - docs\AI_Companion_NestJS.md
     - docs\AI_Companion_Roadmap.md
