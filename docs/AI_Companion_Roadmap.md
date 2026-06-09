@@ -536,7 +536,81 @@ start.bat
 
 ---
 
-## 十三、总结：这套系统的本质
+## 十三、Docker 部署方案
+
+### 13.1 为什么需要 Docker
+
+| 问题       | 传统部署                      | Docker 部署                     |
+| ---------- | ----------------------------- | ------------------------------- |
+| 环境不一致 | "我电脑能跑你电脑不行"        | 一次构建，到处运行              |
+| 依赖冲突   | Node/Python/PG 版本要单独管理 | 全部封装在镜像里                |
+| 部署步骤   | 手动装十几个依赖，容易出错    | `docker compose up -d` 一键启动 |
+| 迁移服务器 | 重新配环境，可能花一天        | 拉镜像，启动，几分钟搞定        |
+
+### 13.2 项目 Docker 架构
+
+```
+docker-compose.yml（一键编排三个服务）
+│
+├── postgres（pgvector/pgvector:pg16）
+│   └── PostgreSQL + pgvector 向量扩展，端口 55432
+│
+├── embedding（自定义构建 ./python）
+│   └── Python FastAPI + ONNX Runtime，端口 8000
+│
+├── api（自定义构建 .）
+│   └── NestJS API + React 前端，端口 3000
+│
+└── qqbot（复用 api 镜像，profiles 按需启动）
+    └── QQ Bot WebSocket 适配器
+```
+
+### 13.3 两种部署方式
+
+**方式一：服务器构建（传统）**
+
+```bash
+# 服务器上
+git clone → 创建 .env → docker compose up -d --build
+```
+
+- 优点：简单直接
+- 缺点：服务器网络差时构建很慢（PyPI/npm 下载慢）
+
+**方式二：本地打包上传（推荐）**
+
+```bash
+# 本地 Windows：双击 deploy.bat
+# 自动完成：构建镜像 → docker save 导出 → scp 上传
+
+# 服务器上：
+docker load -i companion-images.tar
+docker compose -f docker-compose.prod.yml up -d
+```
+
+- 优点：利用本地网络，构建快
+- 缺点：镜像文件较大（约 500MB-1GB）
+
+### 13.4 关键文件
+
+| 文件                      | 说明                                |
+| ------------------------- | ----------------------------------- |
+| `docker-compose.yml`      | 开发环境编排（含 `build:` 指令）    |
+| `docker-compose.prod.yml` | 生产环境编排（用预构建镜像）        |
+| `Dockerfile`              | NestJS + React 多阶段构建           |
+| `python/Dockerfile`       | Python 向量服务构建（含清华镜像源） |
+| `deploy.bat`              | 本地一键打包上传脚本                |
+
+### 13.5 待完善
+
+- [ ] CI/CD 自动化（推送代码自动构建+部署）
+- [ ] Docker 镜像压缩（当前 api 镜像较大）
+- [ ] 容器资源限制（memory/cpu limits）
+- [ ] 日志集中管理（ELK/Loki）
+
+---
+
+## 十四、总结：这套系统的本质
 
 ```
 普通聊天机器人：

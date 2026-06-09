@@ -29,6 +29,7 @@ nul
 
 # Docker
 pgdata/
+companion-images.tar
 
 # Local exported chat records
 exports/

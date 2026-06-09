@@ -3,12 +3,12 @@
 FROM node:24-bookworm-slim AS api-deps
 WORKDIR /app
 COPY package*.json ./
-RUN npm ci
+RUN npm config set registry https://registry.npmmirror.com && npm ci
 
 FROM node:24-bookworm-slim AS web-deps
 WORKDIR /app/web
 COPY web/package*.json ./
-RUN npm ci
+RUN npm config set registry https://registry.npmmirror.com && npm ci
 
 FROM node:24-bookworm-slim AS builder
 WORKDIR /app
@@ -22,7 +22,7 @@ FROM node:24-bookworm-slim AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
 COPY package*.json ./
-RUN npm ci --omit=dev && npm cache clean --force
+RUN npm config set registry https://registry.npmmirror.com && npm ci --omit=dev && npm cache clean --force
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/web/dist ./web/dist
 COPY --from=builder /app/adapters ./adapters

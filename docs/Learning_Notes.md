@@ -4099,3 +4099,260 @@ if not errorlevel 1 (
 | `adapters/qq-bot/.qq-bot-state.json` | Resume 状态（已加入 .gitignore） |
 | `docs/QQ_Bot_Integration.md`         | 详细接入指南                     |
 | `.env` 中的 `QQ_BOT_*`               | 凭证配置                         |
+
+---
+
+## Docker 部署学习笔记
+
+> 面向 Docker 零基础。用大白话解释每个概念，结合本项目实际部署过程。
+
+### 一、Docker 是什么？
+
+**一句话：Docker 就是"打包一切"的工具。**
+
+想象你要搬家：
+
+- 传统方式：把家具一件件搬到新家，重新摆放 → 容易出问题（版本不对、配置丢失）
+- Docker 方式：把整个房间打包成集装箱运过去 → 打开就能用，一模一样
+
+```
+传统部署：
+  服务器 A（装好环境）→ 能跑 ✅
+  服务器 B（环境不同）→ 跑不了 ❌
+
+Docker 部署：
+  镜像（包含一切）→ 服务器 A 能跑 ✅
+                  → 服务器 B 也能跑 ✅
+```
+
+### 二、核心概念（只记这 4 个）
+
+| 概念                  | 是什么                     | 类比             | 本项目示例                        |
+| --------------------- | -------------------------- | ---------------- | --------------------------------- |
+| **Image（镜像）**     | 打包好的程序 + 环境        | 安装光盘 / ISO   | `companion-api:latest`            |
+| **Container（容器）** | 镜像运行起来的实例         | 运行中的程序     | `companion-api`（运行中）         |
+| **Dockerfile**        | 构建镜像的配方             | 菜谱             | `Dockerfile`、`python/Dockerfile` |
+| **docker-compose**    | 一次启动多个容器的编排工具 | 同时打开多个程序 | `docker-compose.yml`              |
+
+```
+Dockerfile（配方）→ docker build（做菜）→ Image（菜品）→ 运行 → Container（端上桌的菜）
+```
+
+### 三、Dockerfile 解析（本项目的）
+
+#### 3.1 主 Dockerfile（NestJS + React）
+
+```dockerfile
+# ===== 第一阶段：构建 =====
+FROM node:24-bookworm-slim AS builder
+# ↑ 基础镜像：Node.js 24 运行环境
+# AS builder：给这步起名叫 "builder"（后面会用到）
+
+WORKDIR /app           # 设置工作目录
+COPY package*.json ./  # 先复制依赖清单（利用缓存）
+RUN npm ci             # 安装依赖
+
+COPY . .               # 复制全部源码
+RUN npm run build      # 编译 TypeScript + React
+
+# ===== 第二阶段：运行 =====
+FROM node:24-bookworm-slim AS runtime
+# ↑ 新的干净镜像（不带编译工具，体积小）
+
+WORKDIR /app
+ENV NODE_ENV=production
+
+COPY package*.json ./
+RUN npm ci --omit=dev  # 只装生产依赖（不要 devDependencies）
+
+COPY --from=builder /app/dist ./dist          # 从第一阶段拿编译结果
+COPY --from=builder /app/web/dist ./web/dist  # 从第一阶段拿前端产物
+COPY --from=builder /app/adapters ./adapters  # 从第一阶段拿适配器
+
+EXPOSE 3000
+CMD ["node", "dist/main.js"]  # 容器启动时执行的命令
+```
+
+**为什么要两阶段（多阶段构建）？**
+
+- 第一阶段：装编译工具 + 全部依赖 + 源码 → 很大（可能 1GB+）
+- 第二阶段：只装运行依赖 + 编译产物 → 小很多
+- 最终镜像只包含第二阶段，体积小、更安全
+
+#### 3.2 Python Dockerfile
+
+```dockerfile
+FROM python:3.12-slim AS runtime
+WORKDIR /app
+
+RUN pip install --no-cache-dir uv   # 安装 uv（Python 包管理器）
+
+# 国内镜像加速（云服务器下载 PyPI 很慢）
+ENV UV_HTTP_TIMEOUT=120
+ENV UV_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple/
+
+COPY pyproject.toml uv.lock ./      # 先复制依赖清单
+RUN uv sync --frozen --no-dev       # 安装依赖（--frozen 用锁文件，--no-dev 不装开发依赖）
+
+COPY main.py embedder.py ./         # 复制代码
+RUN mkdir -p /app/models            # 创建模型目录
+
+CMD ["uv", "run", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+```
+
+### 四、docker-compose.yml 解析
+
+```yaml
+services: # 定义所有服务
+  postgres: # 数据库服务
+    image: pgvector/pgvector:pg16 # 直接用官方镜像
+    environment: # 环境变量（从 .env 读取）
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
+    volumes: # 数据持久化（容器删了数据不丢）
+      - postgres_data:/var/lib/postgresql/data
+
+  api: # API 服务
+    build: # 需要构建（不是直接用镜像）
+      context: . # 构建上下文是当前目录
+    ports: # 端口映射：宿主机:容器
+      - '3000:3000'
+    depends_on: # 依赖关系（等数据库和向量服务就绪才启动）
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped # 崩了自动重启
+
+  qqbot:
+    profiles: [qqbot] # 按需启动（不加 --profile qqbot 不会启动）
+```
+
+**关键概念解释：**
+
+| 语法                 | 含义                                         |
+| -------------------- | -------------------------------------------- |
+| `image: xxx`         | 直接用 Docker Hub 上的镜像                   |
+| `build: .`           | 根据 Dockerfile 现场构建                     |
+| `ports: '3000:3000'` | 左边是服务器端口，右边是容器端口             |
+| `volumes`            | 挂载卷，让容器能读写宿主机目录（数据持久化） |
+| `depends_on`         | 启动顺序依赖                                 |
+| `environment`        | 传环境变量给容器                             |
+| `${VAR:-default}`    | 读 .env 里的 VAR，没有就用 default           |
+| `profiles: [qqbot]`  | 默认不启动，加 `--profile qqbot` 才启动      |
+
+### 五、常用命令速查
+
+```bash
+# ===== 构建 =====
+docker build -t my-image .          # 构建镜像（-t 是打标签）
+docker compose build                # 构建 compose 中所有服务
+docker compose up -d --build        # 构建 + 启动（-d 后台运行）
+
+# ===== 运行 =====
+docker compose up -d                # 启动所有服务
+docker compose --profile qqbot up -d  # 启动所有服务 + qqbot
+docker compose down                 # 停止并删除容器
+docker compose restart              # 重启所有服务
+docker compose restart api          # 只重启 api 服务
+
+# ===== 查看 =====
+docker compose ps                   # 查看容器状态
+docker compose logs                 # 查看所有日志
+docker compose logs -f api          # 实时跟踪 api 日志
+
+# ===== 镜像传输（本地打包部署用）=====
+docker save image1 image2 -o images.tar    # 导出镜像为文件
+docker load -i images.tar                  # 从文件导入镜像
+
+# ===== 清理 =====
+docker system prune -f              # 清理无用的镜像和缓存
+docker compose down --volumes       # 停止并删除数据卷（慎用！数据会丢）
+```
+
+### 六、本地打包部署流程（deploy.bat 原理）
+
+```
+本地 Windows                        云服务器 (62.234.150.98)
+    │                                       │
+    │ 1. docker build                       │
+    │    构建 API 镜像                       │
+    │    构建 Embedding 镜像                 │
+    │                                       │
+    │ 2. docker save                         │
+    │    导出为 companion-images.tar          │
+    │                                       │
+    │ 3. scp ─────────────────────────────→  │
+    │    通过 SSH 上传 tar 文件               │
+    │                                       │
+    │                    4. docker load      │
+    │                    导入镜像             │
+    │                                       │
+    │                    5. docker compose   │
+    │                       -f prod.yml up   │
+    │                    启动服务             │
+```
+
+**为什么要本地打包？**
+
+- 服务器网络差（下载 PyPI/npm 包超时）
+- 本地电脑网络好，构建快
+- 打包后上传，服务器只需 load + up，不需要 build
+
+### 七、Docker 网络概念
+
+```
+宿主机（你的服务器）
+├── Docker 内部网络（容器之间互相通信）
+│   ├── postgres 容器 → 其他容器用 "postgres" 当主机名访问
+│   ├── embedding 容器 → 其他容器用 "embedding" 当主机名访问
+│   └── api 容器 → 其他容器用 "api" 当主机名访问
+│
+└── 外部网络（浏览器/用户访问）
+    └── 通过 ports 映射暴露端口（3000:3000）
+```
+
+**重要：**
+
+- 容器间通信用**服务名**（如 `http://embedding:8000`），不是 `localhost`
+- `localhost` 在容器里指向**容器自己**，不是宿主机
+- 只有配了 `ports` 的服务才能从外部访问
+
+### 八、数据持久化（Volumes）
+
+```yaml
+volumes:
+  - postgres_data:/var/lib/postgresql/data
+```
+
+**为什么需要 Volume？**
+
+- 容器是临时的，删了容器数据就没了
+- Volume 把容器内的目录"挂载"到宿主机
+- 即使容器删除重建，数据依然在
+
+```
+容器重建前：postgres_data 卷 → 有数据
+容器被删除：postgres_data 卷 → 还在（数据不丢）
+容器重建后：postgres_data 卷 → 重新挂载，数据恢复
+```
+
+### 九、常见问题排查
+
+| 问题                      | 原因                      | 解决                                       |
+| ------------------------- | ------------------------- | ------------------------------------------ |
+| `permission denied`       | 用户不在 docker 组        | `sudo usermod -aG docker $USER` + 重新登录 |
+| `port already in use`     | 端口被其他程序占用        | `sudo lsof -i :3000` 查占用                |
+| 构建超时                  | 下载依赖太慢              | 换镜像源 / 加大 UV_HTTP_TIMEOUT            |
+| 容器启动失败              | 依赖的服务还没就绪        | 检查 `depends_on` + `healthcheck`          |
+| `no space left on device` | 磁盘满了（镜像/缓存太多） | `docker system prune -af`                  |
+| 改了代码没生效            | 镜像还是旧的              | `docker compose up -d --build` 重新构建    |
+
+### 十、关键文件清单
+
+| 文件                      | 作用                           |
+| ------------------------- | ------------------------------ |
+| `Dockerfile`              | NestJS + React 多阶段构建配方  |
+| `python/Dockerfile`       | Python 向量服务构建配方        |
+| `docker-compose.yml`      | 开发环境编排（本地 build）     |
+| `docker-compose.prod.yml` | 生产环境编排（用预构建镜像）   |
+| `deploy.bat`              | 本地一键打包+上传脚本          |
+| `.env`                    | 环境变量配置（不进入 Git）     |
+| `.dockerignore`           | 告诉 Docker 构建时忽略哪些文件 |

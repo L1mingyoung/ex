@@ -1,0 +1,94 @@
+# 生产环境 docker-compose（使用预构建镜像，无需在服务器上 build）
+# 用法：docker compose -f docker-compose.prod.yml up -d
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: companion-postgres
+    environment:
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
+      POSTGRES_DB: ${DB_NAME:-companion}
+    ports:
+      - '${DB_PORT:-54321}:5432'
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        [
+          'CMD-SHELL',
+          'pg_isready -U ${DB_USER:-postgres} -d ${DB_NAME:-companion}',
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  embedding:
+    image: companion-embedding:latest
+    container_name: companion-embedding
+    environment:
+      MOCK_EMBEDDING: ${MOCK_EMBEDDING:-0}
+      EMBEDDING_MODEL_PATH: ${EMBEDDING_MODEL_PATH:-/app/models/jina-embeddings-v2-base-zh.onnx}
+      EMBEDDING_TOKENIZER_PATH: ${EMBEDDING_TOKENIZER_PATH:-/app/models/tokenizer.json}
+    ports:
+      - '${EMBEDDING_PORT:-8000}:8000'
+    volumes:
+      - ./python/models:/app/models:ro
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'python',
+          '-c',
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+
+  api:
+    image: companion-api:latest
+    container_name: companion-api
+    environment:
+      NODE_ENV: production
+      PORT: ${PORT:-3000}
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: ${DB_USER:-postgres}
+      DB_PASSWORD: ${DB_PASSWORD:-postgres}
+      DB_NAME: ${DB_NAME:-companion}
+      DB_LOGGING: ${DB_LOGGING:-false}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY}
+      PYTHON_EMBED_URL: http://embedding:8000
+    ports:
+      - '${PORT:-3000}:3000'
+    depends_on:
+      postgres:
+        condition: service_healthy
+      embedding:
+        condition: service_healthy
+    restart: unless-stopped
+
+  qqbot:
+    image: companion-api:latest
+    container_name: companion-qqbot
+    working_dir: /app
+    command: ['node', 'adapters/qq-bot/index.js']
+    environment:
+      QQ_BOT_APP_ID: ${QQ_BOT_APP_ID:-}
+      QQ_BOT_APP_SECRET: ${QQ_BOT_APP_SECRET:-}
+      QQ_BOT_SANDBOX: ${QQ_BOT_SANDBOX:-0}
+      QQ_CHARACTER_ID: ${QQ_CHARACTER_ID:-xiaoya}
+      API_BASE: http://api:3000
+    volumes:
+      - qqbot_state:/app/adapters/qq-bot
+    depends_on:
+      api:
+        condition: service_started
+    restart: unless-stopped
+    profiles:
+      - qqbot
+
+volumes:
+  postgres_data:
+  qqbot_state:
