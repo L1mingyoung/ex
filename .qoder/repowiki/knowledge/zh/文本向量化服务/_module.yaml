@@ -1,0 +1,9 @@
+schema_version: 1
+module_path: embedding_service
+title: 文本向量化服务
+scope:
+    - python/
+source_files: []
+depends_on: []
+related_to:
+    - path: backend

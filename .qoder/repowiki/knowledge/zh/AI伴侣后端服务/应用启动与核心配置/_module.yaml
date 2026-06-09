@@ -1,0 +1,12 @@
+schema_version: 1
+module_path: backend/core
+title: 应用启动与核心配置
+scope:
+    - src/app.controller.spec.ts
+    - src/app.controller.ts
+    - src/app.module.ts
+    - src/app.service.ts
+    - src/main.ts
+source_files: []
+depends_on: []
+related_to: []

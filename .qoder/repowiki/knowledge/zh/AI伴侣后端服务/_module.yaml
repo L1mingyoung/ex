@@ -1,0 +1,10 @@
+schema_version: 1
+module_path: backend
+title: AI伴侣后端服务
+scope:
+    - src/
+source_files: []
+depends_on: []
+related_to:
+    - path: frontend
+    - path: embedding_service
