@@ -1672,3 +1672,349 @@ npm test -- --runInBand
 3. 证据追踪：每条画像关联 source message ids，方便解释“为什么这么判断”。
 4. 置信度字段：区分明确事实、强推断、弱推断。
 5. 独立画像表：多用户、多角色、多会话后，把 `import_profile` 迁移到 `relationship_profiles`。
+
+
+## 2026-06-06 学习笔记：Docker 部署架构
+
+这次把项目从“本机分别启动服务”整理成 Docker Compose 三服务架构：
+
+```text
+浏览器
+  ↓
+api: NestJS + web/dist
+  ↓
+postgres: PostgreSQL + pgvector
+  ↓
+embedding: Python FastAPI + ONNX Runtime
+```
+
+关键点：
+
+- API 容器里不能再访问 `localhost:54321` 或 `localhost:8000`，因为容器内的 localhost 是自己；Compose 内部要用服务名：`postgres:5432` 和 `http://embedding:8000`。
+- pgvector 用官方 `pgvector/pgvector:pg16` 镜像，避免自己在 PostgreSQL 镜像里编译扩展。
+- ONNX 模型很大，不适合 bake 进镜像；现在通过 `./python/models:/app/models:ro` 挂载给 embedding 容器。
+- API 镜像采用多阶段构建：先安装依赖和构建前端/后端，最终 runtime 只保留 production 依赖、`dist` 和 `web/dist`。
+- TypeORM migration 仍然在 API 启动时自动执行，所以容器启动顺序需要等 Postgres healthcheck 通过。
+
+本次验证：
+
+```text
+docker compose --env-file .env.docker.example -f docker-compose.yml config
+```
+
+配置可解析；实际首次 `up --build` 会下载 Node/Python/pgvector 镜像和 npm/uv 依赖，需要 Docker 网络可用。
+
+## 2026-06-08 学习笔记：Docker 改造后如何运行和部署
+
+### 这次添加 Docker 后，项目发生了什么变化
+
+原来项目是“本机分别启动多个服务”：
+
+```text
+本机 PostgreSQL / Docker Postgres
+本机 Python embedding 服务
+本机 NestJS 后端
+本机 Vite 前端
+```
+
+现在改造成 Docker Compose 三服务架构：
+
+```text
+浏览器
+  ↓
+api 容器：NestJS 后端 + web/dist 静态前端
+  ↓
+postgres 容器：PostgreSQL + pgvector
+  ↓
+embedding 容器：Python FastAPI + ONNX Runtime
+```
+
+新增文件：
+
+```text
+Dockerfile                    # 构建 NestJS API，并同时构建 web 前端
+python/Dockerfile             # 构建 Python embedding 服务
+docker-compose.yml            # 一键编排 api / embedding / postgres
+.env.docker.example           # Docker 部署专用环境变量模板
+.dockerignore                 # 避免 node_modules、dist、ONNX 大模型进入 API 镜像
+python/.dockerignore          # 避免 Python 虚拟环境和模型进入 embedding 镜像
+docs/Docker_Deployment.md     # Docker 部署说明
+```
+
+关键变化：
+
+- API 容器不再连接 `localhost:54321`，而是连接 `postgres:5432`。
+- API 容器不再连接 `localhost:8000`，而是连接 `http://embedding:8000`。
+- 前端不需要单独启动 Vite；生产环境由 NestJS 直接服务 `web/dist`。
+- Postgres 使用 `pgvector/pgvector:pg16` 镜像，自动带 pgvector 扩展。
+- Python embedding 服务单独成容器，ONNX 模型通过 volume 挂载，不打进镜像。
+- TypeORM migration 仍然由 API 启动时自动执行。
+
+### 本地 Docker 运行方式
+
+进入项目目录：
+
+```powershell
+cd D:\Code\ex
+```
+
+复制 Docker 环境变量模板：
+
+```powershell
+copy .env.docker.example .env.docker
+```
+
+编辑 `.env.docker`，至少修改：
+
+```text
+DB_PASSWORD=你的数据库密码
+DEEPSEEK_API_KEY=你的 DeepSeek API Key
+```
+
+确认真实 embedding 模型存在：
+
+```text
+D:\Code\ex\python\models\jina-embeddings-v2-base-zh.onnx
+D:\Code\ex\python\models\tokenizer.json
+```
+
+启动：
+
+```powershell
+docker compose --env-file .env.docker up --build
+```
+
+启动后访问：
+
+```text
+http://localhost:3000
+```
+
+常用命令：
+
+```powershell
+# 查看容器
+docker compose --env-file .env.docker ps
+
+# 查看全部日志
+docker compose --env-file .env.docker logs -f
+
+# 只看 API 日志
+docker compose --env-file .env.docker logs -f api
+
+# 只看 embedding 日志
+docker compose --env-file .env.docker logs -f embedding
+
+# 停止，但保留数据库数据
+docker compose --env-file .env.docker down
+
+# 停止，并删除数据库 volume，危险：会清空数据库
+docker compose --env-file .env.docker down -v
+```
+
+如果只是想测试 Docker 全链路，但模型还没准备好，可以临时在 `.env.docker` 里设置：
+
+```text
+MOCK_EMBEDDING=1
+```
+
+注意：mock embedding 只能测试服务能不能跑通，不适合真实长期记忆检索。
+
+### 为什么 Docker 里不能继续用 localhost
+
+初学 Docker 最容易踩的坑：容器里的 `localhost` 指的是“容器自己”，不是宿主机，也不是其他容器。
+
+所以本机开发时可以这样：
+
+```text
+DB_HOST=localhost
+PYTHON_EMBED_URL=http://localhost:8000
+```
+
+但 Docker Compose 里必须这样：
+
+```text
+DB_HOST=postgres
+PYTHON_EMBED_URL=http://embedding:8000
+```
+
+`postgres` 和 `embedding` 是 `docker-compose.yml` 里的服务名。Compose 会自动创建内部网络，让服务名变成可访问的主机名。
+
+### 部署到云服务器的推荐流程
+
+服务器推荐使用：
+
+```text
+Ubuntu 22.04 + Docker
+```
+
+如果购买时选择了 `Ubuntu22.04-Docker26` 镜像，通常 Docker 已经装好。登录服务器后先检查：
+
+```bash
+docker --version
+docker compose version
+```
+
+如果没有 Docker，再安装 Docker；如果已经有，就不用重复安装。
+
+### 第一次部署到服务器
+
+1. 登录服务器：
+
+```bash
+ssh root@你的服务器公网IP
+```
+
+2. 安装 Git（如果没有）：
+
+```bash
+apt update
+apt install -y git
+```
+
+3. 拉取项目：
+
+```bash
+git clone 你的仓库地址 companion
+cd companion
+```
+
+如果你暂时没有推 GitHub，也可以用 SFTP / scp / 文件上传等方式把 `D:\Code\ex` 上传到服务器。
+
+4. 准备环境变量：
+
+```bash
+cp .env.docker.example .env.docker
+nano .env.docker
+```
+
+至少修改：
+
+```text
+DB_PASSWORD=强密码
+DEEPSEEK_API_KEY=你的真实 key
+MOCK_EMBEDDING=0
+```
+
+5. 准备 embedding 模型：
+
+服务器上需要有：
+
+```text
+python/models/jina-embeddings-v2-base-zh.onnx
+python/models/tokenizer.json
+```
+
+如果模型文件已经在本机，可以上传：
+
+```bash
+scp python/models/jina-embeddings-v2-base-zh.onnx root@服务器IP:/root/companion/python/models/
+scp python/models/tokenizer.json root@服务器IP:/root/companion/python/models/
+```
+
+如果暂时不上传模型，可以先把 `.env.docker` 改成：
+
+```text
+MOCK_EMBEDDING=1
+```
+
+6. 启动：
+
+```bash
+docker compose --env-file .env.docker up --build -d
+```
+
+7. 查看状态：
+
+```bash
+docker compose --env-file .env.docker ps
+docker compose --env-file .env.docker logs -f api
+```
+
+8. 浏览器访问：
+
+```text
+http://服务器公网IP:3000
+```
+
+如果访问不了，检查云服务器安全组是否放行 TCP 3000 端口。
+
+### 生产部署下一步：域名和 HTTPS
+
+第一阶段可以直接用：
+
+```text
+http://服务器公网IP:3000
+```
+
+但正式使用建议：
+
+```text
+域名 -> Nginx/Caddy -> api:3000
+HTTPS 自动证书
+```
+
+后续可以加一个反向代理服务，例如 Caddy：
+
+```text
+Caddy 监听 80/443
+  ↓
+反向代理到 api:3000
+```
+
+这样用户访问 `https://你的域名`，而不是暴露 `http://服务器IP:3000`。
+
+### 服务器上更新项目
+
+以后代码更新后，服务器上执行：
+
+```bash
+cd companion
+git pull
+docker compose --env-file .env.docker up --build -d
+```
+
+如果只想重启：
+
+```bash
+docker compose --env-file .env.docker restart
+```
+
+### 当前 Docker 部署的边界
+
+已经完成：
+
+- API / Web / Embedding / Postgres 编排
+- pgvector 数据库镜像
+- embedding 模型 volume 挂载
+- Docker 专用 env 模板
+- 基础部署文档
+
+还没做：
+
+- Nginx / Caddy HTTPS 反向代理
+- 自动备份 PostgreSQL
+- 日志轮转和监控
+- CI/CD 自动部署
+- 多环境配置，如 dev / staging / prod
+
+当前阶段先把 `docker compose up --build -d` 跑通，再考虑 HTTPS、备份和监控。
+
+
+## 2026-06-08 学习笔记：把踩坑固化成规则和 Skill
+
+这次新增了两层防呆机制：
+
+- 项目内规则文档：`docs/Project_Rules.md`
+- Codex skill：`C:\Users\Lianyue\.codex\skills\ai-companion-project-guardrails`
+
+这样以后继续做 Docker、部署、微信导入、长期记忆、文档同步时，不只靠临场回忆，而是优先按规则检查。
+
+重点规则：
+
+- Docker 容器之间不用 `localhost`，用服务名：`postgres`、`embedding`。
+- ONNX 大模型用 volume 挂载，不打进镜像。
+- 改完重要功能要同步 `Implementation_Plan.md` 和 `Learning_Notes.md`。
+- Windows 终端中文乱码不等于源码坏了，不要乱修注释。
+- 微信记录导出走安全剪贴板工具，不碰数据库解密。
+- 云服务购买先按当前需求，不买暂时用不到的配套项。

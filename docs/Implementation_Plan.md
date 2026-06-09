@@ -381,3 +381,14 @@ API：`POST /api/import/chat-records` 新增 `mode: 'merge' | 'replace'` 字段
 第四层：情绪状态 (用户情绪信号 + AI 自身情绪)
 第五层：严格指令约束 (禁止自曝AI、维持人设)
 ```
+
+---
+
+## 2026-06-06 Docker 部署改造
+
+- 新增根目录 `Dockerfile`：多阶段构建 NestJS API，并构建 `web/dist` 后由后端静态服务。
+- 新增 `python/Dockerfile`：独立运行 FastAPI embedding 服务，模型目录通过 volume 挂载，不把 ONNX 大文件打进镜像。
+- 新增 `docker-compose.yml`：编排 `api`、`embedding`、`postgres(pgvector)` 三个服务。
+- 新增 `.env.docker.example`：Docker 部署专用环境变量模板。
+- 新增 `docs/Docker_Deployment.md`：记录启动、停止、模型准备和 mock embedding 测试方式。
+- `docker compose config` 已通过配置解析验证。
