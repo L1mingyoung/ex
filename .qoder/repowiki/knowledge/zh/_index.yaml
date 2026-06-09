@@ -2,7 +2,7 @@
 schema_version: 1
 locale: zh-CN
 branch: main
-exported_at: "2026-06-09T01:49:11Z"
+exported_at: "2026-06-09T03:49:42Z"
 modules:
     "":
         dir_name: AI伴侣全栈协同平台
@@ -23,6 +23,7 @@ modules:
             - .qoder\repowiki\knowledge\zh\AI伴侣全栈协同平台\技术栈.md
             - .qoder\repowiki\knowledge\zh\AI伴侣全栈协同平台\架构设计.md
             - .qoder\repowiki\knowledge\zh\AI伴侣全栈协同平台\概述.md
+            - .qoder\repowiki\knowledge\zh\AI伴侣全栈协同平台\特殊配置与命令.md
             - .qoder\repowiki\knowledge\zh\AI伴侣全栈协同平台\编码规范.md
             - .qoder\repowiki\knowledge\zh\AI伴侣后端服务\_module.yaml
             - .qoder\repowiki\knowledge\zh\AI伴侣后端服务\应用启动与核心配置\_module.yaml
@@ -104,6 +105,7 @@ modules:
             - .qoder\repowiki\zh\content\部署与运维\生产环境部署.md
             - .qoder\repowiki\zh\content\部署与运维\监控与日志管理.md
             - .qoder\repowiki\zh\content\部署与运维\部署与运维.md
+            - .qoder\repowiki\zh\content\项目概述\学习笔记.md
             - .qoder\repowiki\zh\content\项目概述\开发环境搭建.md
             - .qoder\repowiki\zh\content\项目概述\技术栈概览.md
             - .qoder\repowiki\zh\content\项目概述\核心功能特性\LLM推理服务.md
@@ -118,7 +120,9 @@ modules:
             - .qoder\repowiki\zh\content\项目概述\系统架构概览.md
             - .qoder\repowiki\zh\content\项目概述\项目介绍.md
             - .qoder\repowiki\zh\content\项目概述\项目概述.md
+            - .qoder\repowiki\zh\content\项目概述\项目规则.md
             - .qoder\repowiki\zh\meta\repowiki-metadata.json
+            - .trae\rules\project_rules.md
             - Dockerfile
             - README.md
             - adapters\README.md
@@ -217,7 +221,9 @@ modules:
             - web\src\components\Sidebar\Sidebar.css
             - web\src\components\Sidebar\Sidebar.tsx
             - web\src\components\Sidebar\StatusBar.tsx
+            - web\src\components\Toast.tsx
             - web\src\context\AppContext.tsx
+            - web\src\hooks\useTheme.ts
             - web\src\index.css
             - web\src\main.tsx
             - web\src\vite-env.d.ts

@@ -636,3 +636,27 @@ API：`POST /api/import/chat-records` 新增 `mode: 'merge' | 'replace'` 字段
 | .dockerignore | ✅ | 根目录 + python 目录 |
 | 部署文档 | ✅ | docs/Docker_Deployment.md |
 | Mock Embedding 模式 | ✅ | 无模型时可快速联调 |
+| start.bat 一键启动 | ✅ | 双击启动全部开发服务，含环境检查 |
+
+---
+
+## 2026-06-09 功能更新：start.bat 开发启动器
+
+### 变更内容
+
+| 变更项 | 说明 | 状态 |
+|--------|------|------|
+| start.bat 重写 | 从纯提示改为自动启动所有服务 | ✅ |
+| 环境检查 | 启动前检查 Docker/Node.js/uv 是否安装 | ✅ |
+| 数据库智能启动 | 先尝试 docker start，失败则 docker compose up | ✅ |
+| 每服务独立窗口 | Embedding/API/Web 各自独立 cmd 窗口 | ✅ |
+
+### 当前完成状态
+
+| 子项 | 状态 | 说明 |
+|------|------|------|
+| PostgreSQL 启动 | ✅ | Docker 容器，优先复用已有容器 |
+| Embedding 启动 | ✅ | Mock 模式 + --reload 热更新 |
+| API 启动 | ✅ | npm run start:dev 热更新 |
+| Web 前端启动 | ✅ | npm run dev Vite HMR |
+| 前置检查 | ✅ | Docker / Node.js / uv 缺失时提示安装 |

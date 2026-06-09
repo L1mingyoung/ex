@@ -3698,3 +3698,115 @@ Mock 模式：返回随机向量 → 启动快 → 省内存 → UI 调试足够
 - **开发环境混合策略**：数据库 Docker + 代码本地跑，兼顾环境一致性和热更新效率
 - **Mock Embedding 为开发默认**：日常开发不需要真实向量搜索，Mock 模式启动快、省内存
 - **Docker 用于部署而非开发**：Docker 解决"环境一致性"问题，但牺牲了"开发效率"，各取所长
+
+---
+
+## 2026-06-09 | start.bat 开发启动器
+
+### 一、Windows bat 脚本基础
+
+#### 常用命令
+
+| 命令 | 说明 | 示例 |
+|------|------|------|
+| `@echo off` | 关闭命令回显，让输出更干净 | 脚本开头必加 |
+| `echo` | 输出文字 | `echo Hello World` |
+| `start "标题" cmd /k "命令"` | 新窗口执行命令，窗口保持打开 | `start "API" cmd /k "npm run dev"` |
+| `cd /d %~dp0` | 切换到 bat 文件所在目录 | `%~dp0` 是 bat 文件所在路径 |
+| `if %errorlevel% neq 0` | 判断上一条命令是否失败 | `neq` = not equal |
+| `>nul 2>&1` | 静默执行，不输出任何内容 | `docker --version >nul 2>&1` |
+| `pause` | 暂停，等用户按键 | 脚本结尾，防止窗口闪退 |
+| `chcp 65001` | 切换控制台编码为 UTF-8 | 支持中文显示 |
+| `::` 或 `rem` | 注释 | `:: 这是注释` |
+
+#### `start` 命令详解
+
+```bat
+start "窗口标题" cmd /k "要执行的命令"
+```
+
+- `"窗口标题"`：新窗口的标题栏文字，方便识别
+- `cmd /k`：执行命令后**保持窗口打开**（`/c` 是执行后关闭）
+- 每个服务一个独立窗口，关闭窗口 = 停止该服务
+
+#### `%~dp0` 是什么？
+
+```
+假设 start.bat 在 D:\Code\AI\companion\start.bat
+
+%~dp0 = D:\Code\AI\companion\    （带末尾反斜杠）
+
+cd /d %~dp0python  →  切换到 D:\Code\AI\companion\python
+cd /d %~dp0web     →  切换到 D:\Code\AI\companion\web
+```
+
+`%0` 是脚本自身路径，`%~d` 提取盘符，`%~p` 提取路径，`%~dp0` 合起来就是脚本所在目录。
+
+### 二、start.bat 的设计逻辑
+
+#### 启动流程
+
+```
+双击 start.bat
+    │
+    ├─ 检查 Docker ─── 不存在 → 提示安装，退出
+    ├─ 检查 Node.js ── 不存在 → 提示安装，退出
+    ├─ 检查 uv ─────── 不存在 → 提示安装，退出
+    │
+    ├─ [1/4] PostgreSQL
+    │   ├─ docker start companion-pg（尝试复用已有容器）
+    │   └─ 失败 → docker compose up postgres -d（创建新容器）
+    │
+    ├─ [2/4] Python Embedding（新窗口）
+    │   └─ MOCK_EMBEDDING=1 uv run uvicorn main:app --port 8000 --reload
+    │
+    ├─ [3/4] NestJS API（新窗口）
+    │   └─ npm run start:dev
+    │
+    └─ [4/4] Web 前端（新窗口）
+        └─ npm run dev
+```
+
+#### 数据库智能启动
+
+```bat
+docker start companion-pg >nul 2>&1
+if %errorlevel% neq 0 (
+    docker compose --env-file .env.docker up postgres -d
+)
+```
+
+- 第一次运行：`companion-pg` 容器不存在 → `docker start` 失败 → 回退到 `docker compose up`
+- 后续运行：容器已存在但可能停止 → `docker start` 直接启动，比 `docker compose up` 更快
+
+#### 环境变量设置
+
+```bat
+set MOCK_EMBEDDING=1 && uv run uvicorn main:app --port 8000 --reload
+```
+
+- `set MOCK_EMBEDDING=1`：设置环境变量，让 Python 使用 Mock 向量
+- `&&`：前一条成功才执行后一条
+- `--reload`：Python 热更新，修改代码自动重启
+
+### 三、为什么每个服务用独立窗口？
+
+| 方案 | 优点 | 缺点 |
+|------|------|------|
+| 所有服务同一窗口 | 节省屏幕空间 | 一个服务崩溃日志被其他服务刷走，难以排查 |
+| 每服务独立窗口 | 日志隔离，关闭单个窗口停止单个服务 | 占 4 个窗口 |
+
+独立窗口更实用：开发时通常只关注 API 和前端日志，数据库和 Embedding 的窗口可以最小化。
+
+### 踩坑记录
+
+- **`cd` 不能跨盘符**：`cd D:\other` 在 C 盘下不会切换。必须用 `cd /d D:\other`，`/d` 表示同时切换盘符和目录。
+- **`set` 环境变量作用域**：`set MOCK_EMBEDDING=1` 只在当前 cmd 会话生效。用 `start cmd /k "set VAR=1 && command"` 可以在新窗口中设置。
+- **`chcp 65001` 防止中文乱码**：Windows 默认使用 GBK 编码，`echo` 输出中文会乱码。`chcp 65001` 切换到 UTF-8 编码。
+
+### 设计决策
+
+- **前置检查而非启动后报错**：缺少依赖时立即提示并退出，避免启动到一半才发现缺 Docker 或 Node.js
+- **数据库优先复用已有容器**：`docker start` 比 `docker compose up` 快，且不会重建容器
+- **Embedding 默认 Mock 模式**：开发时 99% 不需要真实向量，Mock 启动快、省内存
+- **独立窗口而非同一窗口**：日志隔离，方便排查问题，关闭单个窗口即可停止单个服务
