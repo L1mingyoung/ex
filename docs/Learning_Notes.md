@@ -2018,3 +2018,1553 @@ docker compose --env-file .env.docker restart
 - Windows 终端中文乱码不等于源码坏了，不要乱修注释。
 - 微信记录导出走安全剪贴板工具，不碰数据库解密。
 - 云服务购买先按当前需求，不买暂时用不到的配套项。
+
+---
+
+## 2026-06-09 | 前端移动端适配学习笔记
+
+### 一、为什么不用跨端框架？
+
+| 框架 | H5 输出 | 小程序输出 | 原生 App | 适合场景 |
+|------|---------|-----------|---------|---------|
+| **React + CSS 响应式** | ✅ 原生 | ❌ | ❌ | 只需要 H5 |
+| **Taro** | ✅ 编译输出 | ✅ 编译输出 | ❌ | H5 + 小程序 |
+| **React Native + RN Web** | ✅ 映射 | ❌ | ✅ | App + H5 |
+| **Uni-app** | ✅ 编译输出 | ✅ 编译输出 | ✅ | 全平台（Vue） |
+
+**结论**：只需要 H5 移动端兼容时，纯 CSS 响应式是最轻量、最高效的方案。跨端框架引入的额外复杂度（组件体系替换、CSS 限制、路由替换、构建工具切换）远大于收益。
+
+### 二、视口（Viewport）基础
+
+#### 什么是视口？
+
+视口是浏览器用来渲染页面的区域。移动端浏览器的视口行为和桌面完全不同：
+
+```
+桌面浏览器：视口 = 浏览器窗口大小
+移动浏览器：视口 ≠ 屏幕宽度（默认会模拟 980px 宽度）
+```
+
+#### viewport meta 标签
+
+```html
+<meta name="viewport"
+  content="width=device-width,        ← 视口宽度 = 设备宽度（不再模拟 980px）
+           initial-scale=1.0,          ← 初始缩放比例 1:1
+           maximum-scale=1.0,          ← 禁止放大（聊天应用不需要）
+           user-scalable=no,           ← 禁止用户手动缩放
+           viewport-fit=cover"         ← 内容延伸到安全区域外（刘海屏）
+/>
+```
+
+| 参数 | 作用 | 为什么这样设 |
+|------|------|-------------|
+| `width=device-width` | 视口宽度等于设备物理宽度 | 不设的话移动端会以 980px 渲染再缩放，文字模糊 |
+| `initial-scale=1.0` | 页面初始缩放 1:1 | 配合 `width=device-width` 实现像素级清晰 |
+| `maximum-scale=1.0` + `user-scalable=no` | 禁止缩放 | 聊天应用不需要缩放，防止误触放大 |
+| `viewport-fit=cover` | 内容覆盖到安全区域 | 让背景色延伸到刘海/圆角区域，不会出现白边 |
+
+#### iOS PWA 支持
+
+```html
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="theme-color" content="#0d0c0e" />
+```
+
+| 标签 | 作用 |
+|------|------|
+| `apple-mobile-web-app-capable` | 允许添加到主屏幕后全屏运行（隐藏 Safari 地址栏） |
+| `apple-mobile-web-app-status-bar-style` | 状态栏样式：`black-translucent` 让状态栏透明，内容延伸到顶部 |
+| `theme-color` | 浏览器 UI 元素颜色（地址栏底色），匹配页面背景色避免闪烁 |
+
+### 三、安全区域（Safe Area）
+
+#### 什么是安全区域？
+
+iPhone X 开始有刘海（notch）和底部 Home Indicator。这些区域不能放交互内容：
+
+```
+┌─────────────────────────────┐
+│         刘海区域             │ ← safe-area-inset-top
+│  ┌───────────────────────┐  │
+│  │                       │  │
+│  │     可用内容区域       │  │
+│  │                       │  │
+│  └───────────────────────┘  │
+│         Home Indicator       │ ← safe-area-inset-bottom
+└─────────────────────────────┘
+```
+
+#### CSS env() 函数
+
+```css
+:root {
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+}
+```
+
+- `env(safe-area-inset-top, 0px)`：读取系统安全区域值，不支持时回退到 `0px`
+- 必须配合 `viewport-fit=cover` 使用，否则 `env()` 返回 0
+- 定义为 CSS 变量后，全局可用，不用每个地方都写 `env()`
+
+#### 使用方式
+
+```css
+/* 输入区底部要避开 Home Indicator */
+#input-area {
+  padding-bottom: calc(10px + var(--safe-bottom));
+}
+
+/* 侧边栏顶部要避开刘海 */
+#sidebar {
+  padding-top: calc(20px + var(--safe-top));
+}
+```
+
+### 四、动态视口高度（dvh）
+
+#### 问题：100vh 在移动端的 bug
+
+```
+桌面端：100vh = 视口高度 ✅
+
+iOS Safari：100vh = 包含地址栏的高度 ❌
+  → 地址栏隐藏后，内容比实际视口高
+  → 底部内容被截断
+
+Android Chrome：100vh = 不包含地址栏的高度
+  → 地址栏显示时，内容比视口矮
+  → 底部出现空白
+```
+
+#### 解决方案：dvh 单位
+
+```css
+body {
+  height: 100vh;      /* 回退：不支持 dvh 的浏览器 */
+  height: 100dvh;     /* 动态视口高度：跟随地址栏变化 */
+}
+```
+
+| 单位 | 含义 | 地址栏显示时 | 地址栏隐藏时 |
+|------|------|-------------|-------------|
+| `vh` | 视口高度（固定） | 偏大（iOS） | 正确 |
+| `svh` | 小视口高度 | 地址栏隐藏时的高度 | 同左 |
+| `lvh` | 大视口高度 | 地址栏显示时的高度 | 同左 |
+| `dvh` | 动态视口高度 | 自动调整 | 自动调整 |
+
+**`100dvh` 会随地址栏显示/隐藏自动变化**，是目前最完美的方案。
+
+### 五、抽屉式侧边栏
+
+#### 桌面端 vs 移动端的布局差异
+
+```
+桌面端（≥769px）：
+┌──────────┬──────────────────────┐
+│          │                      │
+│ 侧边栏    │     聊天区域          │
+│ 300px    │     flex: 1          │
+│          │                      │
+└──────────┴──────────────────────┘
+
+移动端（≤768px）：
+┌──────────────────────┐
+│ ☰  聊天区域标题       │ ← 汉堡菜单
+│                      │
+│     聊天内容          │ ← 全屏
+│                      │
+│  [输入框] [发送]      │
+└──────────────────────┘
+
+点击汉堡菜单后：
+┌─────┬─────────────────┐
+│侧边 │  ████ 遮罩 ████  │ ← 半透明遮罩
+│栏   │                  │
+│85vw │                  │
+│     │                  │
+└─────┴─────────────────┘
+```
+
+#### 实现原理
+
+```css
+/* 桌面端：正常 flex 布局 */
+#sidebar {
+  width: 300px;
+  min-width: 300px;
+}
+
+/* 移动端：固定定位 + 滑出动画 */
+@media (max-width: 768px) {
+  #sidebar {
+    position: fixed;           /* 脱离文档流，覆盖在聊天区上方 */
+    top: 0; left: 0; bottom: 0;
+    width: 85vw;               /* 占屏幕 85%，最大 360px */
+    max-width: 360px;
+    transform: translateX(-100%);  /* 默认滑出屏幕外 */
+    transition: transform 250ms cubic-bezier(0.16, 1, 0.3, 1);
+    z-index: 100;              /* 在遮罩之上 */
+  }
+
+  /* 打开状态 */
+  .sidebar-open #sidebar {
+    transform: translateX(0);  /* 滑入屏幕 */
+    box-shadow: 8px 0 40px rgba(0, 0, 0, 0.4);  /* 加阴影增加层次感 */
+  }
+}
+```
+
+#### 遮罩层
+
+```tsx
+{/* App.tsx */}
+<div className="sidebar-overlay" onClick={closeSidebar} />
+```
+
+```css
+.sidebar-overlay {
+  display: none;           /* 桌面端不显示 */
+  position: fixed;
+  inset: 0;                /* top/right/bottom/left 全 0 */
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(6px);  /* 毛玻璃效果 */
+  z-index: 90;             /* 在侧边栏之下 */
+}
+
+.sidebar-open .sidebar-overlay {
+  display: block;
+  opacity: 1;
+}
+```
+
+#### 状态管理
+
+```tsx
+// App.tsx
+const [sidebarOpen, setSidebarOpen] = useState(false);
+
+// 选择会话后自动关闭侧边栏
+const handleSelectSession = (id: string) => {
+  selectSession(id);
+  setSidebarOpen(false);    // ← 关键：选择即关闭
+};
+
+// 通过 className 控制全局状态
+<div className={`app ${sidebarOpen ? 'sidebar-open' : ''}`}>
+```
+
+### 六、iOS 输入框缩放问题
+
+#### 问题
+
+iOS Safari 对 `font-size < 16px` 的输入框会自动缩放页面，导致布局错乱：
+
+```
+输入框 font-size: 14px → iOS 自动放大到 16px → 页面被缩放 → 布局崩溃
+```
+
+#### 解决方案
+
+```css
+@media (max-width: 768px) {
+  #message-input {
+    font-size: 16px;   /* ≥16px iOS 不会自动缩放 */
+  }
+}
+```
+
+这是最简单有效的方案。其他方案（如 `maximum-scale=1`）会影响可访问性。
+
+### 七、输入框自适应高度
+
+#### 原理
+
+HTML `<textarea>` 默认固定高度。要实现"内容少时一行，内容多时自动变高"：
+
+```tsx
+// InputArea.tsx
+const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+// 每次文字变化时重新计算高度
+useEffect(() => {
+  const el = textareaRef.current;
+  if (!el) return;
+  el.style.height = 'auto';                          // 先重置为 auto
+  el.style.height = Math.min(el.scrollHeight, 120) + 'px';  // 再设为内容高度，上限 120px
+}, [text]);
+```
+
+**为什么要先设 `auto` 再设 `scrollHeight`？**
+
+因为 `scrollHeight` 是"内容需要的最小高度"。但如果 `height` 已经大于内容高度，`scrollHeight` 会返回当前 `height` 而不是内容高度。先 `auto` 重置，`scrollHeight` 才会返回真实内容高度。
+
+### 八、触摸交互优化
+
+#### 1. 最小触摸目标
+
+Apple HIG 规定最小触摸目标 44×44pt：
+
+```css
+@media (max-width: 768px) {
+  .modal-actions button {
+    min-height: 44px;   /* Apple HIG 最小触摸目标 */
+  }
+}
+```
+
+#### 2. 移动端无 hover 的处理
+
+桌面端 hover 显示操作按钮，移动端没有 hover：
+
+```css
+/* 桌面端：hover 才显示 */
+.char-edit-btn {
+  opacity: 0;
+}
+.character-item:hover .char-edit-btn {
+  opacity: 1;
+}
+
+/* 移动端：常显半透明 */
+@media (max-width: 768px) {
+  .char-edit-btn {
+    opacity: 0.5;    /* 没有hover，始终半透明可见 */
+  }
+}
+```
+
+#### 3. 按压反馈
+
+移动端没有 hover，用 `:active` 伪类提供触摸反馈：
+
+```css
+.menu-btn:active {
+  transform: scale(0.92);   /* 按下时缩小 8% */
+}
+
+#send-btn:active {
+  transform: scale(0.97);   /* 按下时缩小 3% */
+}
+```
+
+#### 4. 禁止默认触摸行为
+
+```css
+html, body {
+  -webkit-tap-highlight-color: transparent;  /* 禁止点击高亮（Android 蓝色闪烁） */
+  overscroll-behavior: none;                 /* 禁止过度滚动（下拉刷新/橡皮筋效果） */
+}
+```
+
+### 九、CSS 变量设计系统
+
+#### 为什么用 CSS 变量？
+
+```css
+/* ❌ 硬编码：改主题要改几十个地方 */
+.button { background: #6366f1; }
+.link { color: #6366f1; }
+.border { border-color: rgba(99, 102, 241, 0.3); }
+
+/* ✅ CSS 变量：改一处全局生效 */
+:root { --accent: #d4764e; }
+.button { background: var(--accent); }
+.link { color: var(--accent); }
+.border { border-color: var(--accent-soft); }
+```
+
+#### 本项目的变量体系
+
+```css
+:root {
+  /* 背景层级：4 级递增亮度 */
+  --bg: #0d0c0e;           /* 最深：页面底色 */
+  --bg-surface: #161518;   /* 侧边栏、卡片 */
+  --bg-elevated: #1e1c21;  /* 输入框、弹出层 */
+  --bg-hover: #252329;     /* hover 状态 */
+
+  /* 前景层级：3 级递减重要性 */
+  --fg: #e8e2d9;           /* 正文 */
+  --fg-secondary: #a09a92; /* 次要文字 */
+  --fg-muted: #6b665f;     /* 占位符、标签 */
+
+  /* 主色调 + 衍生色 */
+  --accent: #d4764e;              /* 主色 */
+  --accent-soft: rgba(212,118,78,0.12);  /* 淡底色（选中态） */
+  --accent-hover: #e08a64;        /* hover 态 */
+  --accent-glow: rgba(212,118,78,0.25);  /* 发光（阴影） */
+
+  /* 圆角体系 */
+  --radius-sm: 8px;    /* 小元素：按钮、输入框 */
+  --radius: 14px;      /* 中元素：消息气泡 */
+  --radius-lg: 20px;   /* 大元素：模态框 */
+  --radius-full: 9999px; /* 胶囊：标签、徽章 */
+
+  /* 动画曲线 */
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);     /* 减速：滑入 */
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1); /* 弹性：弹出 */
+}
+```
+
+### 十、媒体查询断点策略
+
+```css
+/* 移动端优先的断点设计 */
+
+/* 默认样式 = 桌面端 */
+#sidebar { width: 300px; }
+
+/* 移动端覆盖 */
+@media (max-width: 768px) {
+  #sidebar { position: fixed; ... }
+}
+```
+
+| 断点 | 含义 | 典型设备 |
+|------|------|---------|
+| ≤768px | 移动端 | 手机竖屏 |
+| 769px+ | 桌面端 | 平板横屏、笔记本、台式 |
+
+**为什么选 768px？** iPad 竖屏 768px，是"手机"和"平板"的自然分界线。768px 以下用抽屉式导航，以上用固定侧边栏。
+
+### 十一、backdrop-filter 毛玻璃效果
+
+```css
+#chat-header {
+  background: rgba(13, 12, 14, 0.8);   /* 半透明底色 */
+  backdrop-filter: blur(16px);          /* 背后内容模糊 16px */
+  -webkit-backdrop-filter: blur(16px);  /* Safari 前缀 */
+}
+```
+
+- `backdrop-filter: blur()` 让元素背后的内容变模糊，产生毛玻璃效果
+- 必须配合半透明 `background` 使用（不透明就看不到背后了）
+- `-webkit-` 前缀：Safari 仍需要前缀
+- 性能注意：大面积 blur 在低端设备可能卡顿，本项目只在 header/footer 使用
+
+---
+
+## 2026-06-09 | H5 完善：交互增强与样式补全
+
+### 技术要点
+
+#### 1. AbortController 取消 SSE 流式请求
+
+SSE（Server-Sent Events）流式请求一旦发起，会持续接收数据直到服务端关闭。用户可能不想等 AI 回复完，需要"停止生成"功能。
+
+**实现方式：**
+
+```typescript
+// 发起请求时保存 AbortController
+const controller = new AbortController();
+fetch(url, { signal: controller.signal });
+
+// 用户点击"停止"时
+controller.abort();  // 取消 fetch，触发 AbortError
+```
+
+**关键细节：**
+
+- `abort()` 后 fetch 会抛出 `AbortError`，需要在 `.catch()` 中判断 `err.name !== 'AbortError'` 才报告错误
+- 中断后需要清理状态：如果 AI 回复为空则移除气泡，否则保留已有内容
+- `AbortController` 只能使用一次，abort 后需要创建新的实例
+
+#### 2. 消息时间戳的 hover 显示
+
+聊天应用中时间戳是重要信息，但常驻显示会干扰阅读。解决方案：
+
+- 时间戳默认 `opacity: 0`，hover 时 `opacity: 1`
+- 使用 `transition` 实现平滑淡入
+- 移动端无 hover，可考虑始终显示（后续优化）
+
+```css
+.message-time {
+  opacity: 0;
+  transition: opacity 150ms;
+}
+.message:hover .message-time {
+  opacity: 1;
+}
+```
+
+#### 3. Toast 通知组件设计
+
+替代 `alert()` 的非阻塞通知方案：
+
+| 对比 | alert() | Toast |
+|------|---------|-------|
+| 阻塞 | 阻塞主线程 | 非阻塞 |
+| 定位 | 浏览器原生弹窗 | 固定定位右上角 |
+| 样式 | 不可自定义 | 完全自定义 |
+| 多条 | 一次只能一个 | 可堆叠显示 |
+| 自动消失 | 需手动关闭 | 3 秒自动消失 |
+
+**实现要点：**
+
+- 使用 `createContext` + `useCallback` 全局共享 toast 函数
+- `useRef` 计数器生成唯一 ID，避免 `useState` 的闭包陷阱
+- `setTimeout` 3 秒后自动移除
+- CSS `pointer-events: none` 让容器不阻挡点击，但单个 toast `pointer-events: auto` 允许交互
+
+#### 4. 消息气泡 flex 布局重构
+
+旧布局：消息内容直接在 `.message` div 内，AI 头像无法与气泡对齐。
+
+新布局：
+
+```
+.message (flex row)
+  ├── .message-avatar (AI only, flex-shrink: 0)
+  │   └── .avatar-ai
+  └── .message-body (flex: 1, min-width: 0)
+      ├── .message-content
+      └── .message-meta
+          ├── .message-time
+          └── .typing-dots
+```
+
+用户消息使用 `flex-direction: row-reverse` 让内容靠右。
+
+### 踩坑记录
+
+- **Toast 组件缺少 CSS**：之前创建了 Toast 组件但忘记写样式，导致通知不可见。现在在 `index.css` 中补全了 `.toast-container` 和三种类型的样式。
+- **empty-hint 无样式**：`CharacterSection` 和 `SessionSection` 使用了 `.empty-hint` 类但没有对应 CSS，文字直接贴边。现在补全了居中灰色小字样式。
+- **停止按钮的 border 重复声明**：`#stop-btn` 同时写了 `border: none` 和 `border: 1px solid ...`，后者覆盖前者。应只保留需要的那个。
+
+### 设计决策
+
+- **时间戳 hover 显示 vs 始终显示**：选择 hover 显示，因为聊天界面信息密度高，时间戳常驻会干扰阅读。移动端后续可改为始终显示。
+- **停止按钮红色风格**：与发送按钮的珊瑚色形成对比，红色传达"中断/危险"语义，用户一眼能区分。
+- **空 AI 回复移除 vs 保留**：如果用户在 AI 还没输出任何内容时就停止，移除空气泡更干净；如果已有部分内容，保留并标记为完成。
+- **Toast 位置右上角**：符合主流应用习惯（如 macOS 通知、Discord 等），不遮挡聊天输入区。
+
+---
+
+## 2026-06-09 | 亮色/暗色主题切换
+
+### 技术要点
+
+#### 1. CSS 变量 + data 属性实现主题切换
+
+最主流的主题切换方案：在 `:root` 定义暗色变量，在 `[data-theme="light"]` 覆盖为亮色值。切换主题只需修改 `document.documentElement` 的 `data-theme` 属性，所有 CSS 变量自动生效。
+
+```css
+:root {
+  --bg: #0d0c0e;          /* 暗色背景 */
+  --fg: #e8e2d9;          /* 暗色前景 */
+  color-scheme: dark;     /* 告诉浏览器用暗色原生控件 */
+}
+
+[data-theme="light"] {
+  --bg: #f7f3ee;          /* 亮色背景 */
+  --fg: #1a1714;          /* 亮色前景 */
+  color-scheme: light;    /* 告诉浏览器用亮色原生控件 */
+}
+```
+
+**为什么用 CSS 变量而不是两套 CSS 文件？**
+
+- 单文件维护，改一个变量全局生效
+- 运行时切换无需重新加载样式表
+- 语义化命名（`--bg`、`--fg`）比 `.dark-theme .xxx` 更清晰
+
+#### 2. FOUC（Flash of Unstyled Content）防闪烁
+
+如果主题切换在 React 渲染后才执行，用户会先看到暗色再闪到亮色。解决方案：在 `index.html` 的 `<head>` 中用内联脚本在页面渲染前就读取 localStorage 并设置 `data-theme`。
+
+```html
+<script>
+  (function(){
+    try {
+      var t = localStorage.getItem('companion-theme');
+      if (t === 'light') {
+        document.documentElement.setAttribute('data-theme', 'light');
+        document.querySelector('meta[name="theme-color"]').content = '#f7f3ee';
+      }
+    } catch(e){}
+  })();
+</script>
+```
+
+**关键：** 这个脚本必须在 `<head>` 中、CSS 加载之前执行，才能确保首次渲染就是正确的主题。
+
+#### 3. 系统偏好检测
+
+使用 `window.matchMedia('(prefers-color-scheme: light)')` 检测用户操作系统级别的主题偏好。如果用户没有手动选择过主题，就跟随系统设置。
+
+```typescript
+function getInitialTheme(): Theme {
+  const stored = localStorage.getItem('companion-theme');
+  if (stored === 'light' || stored === 'dark') return stored;
+  // 没有存储过，跟随系统
+  if (window.matchMedia('(prefers-color-scheme: light)').matches) {
+    return 'light';
+  }
+  return 'dark';
+}
+```
+
+#### 4. 亮色主题的语义色适配
+
+暗色主题中，错误/成功/警告等语义色使用半透明背景 + 亮色文字（如 `rgba(239, 68, 68, 0.12)` + `#f87171`）。但在亮色主题中，这些颜色对比度不够，需要使用更深的实色：
+
+| 语义 | 暗色 | 亮色 |
+|------|------|------|
+| 错误文字 | `#f87171`（亮红） | `#dc2626`（深红） |
+| 错误背景 | `rgba(239,68,68,0.12)` | `rgba(220,38,38,0.06)` |
+| 成功文字 | `#4ade80`（亮绿） | `#16a34a`（深绿） |
+| 警告文字 | `#fbbf24`（亮黄） | `#a16207`（深黄） |
+
+**原理：** 暗色背景上需要亮色文字才清晰，亮色背景上需要深色文字才清晰。同样的 `#f87171` 在白色背景上对比度不足（WCAG 不达标）。
+
+#### 5. theme-color Meta 标签联动
+
+`<meta name="theme-color">` 控制移动端浏览器地址栏颜色。切换主题时需要同步更新：
+
+```typescript
+function updateMetaThemeColor(t: Theme) {
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) meta.setAttribute('content', META_THEME_COLORS[t]);
+}
+```
+
+暗色 `#0d0c0e` → 亮色 `#f7f3ee`，让浏览器 UI 与应用主题一致。
+
+#### 6. 新增 CSS 变量提取硬编码颜色
+
+原来 header 和 input area 的背景直接写 `rgba(13, 12, 14, 0.8)`，这在亮色主题下不对。提取为 CSS 变量：
+
+```css
+:root {
+  --bar-bg: rgba(13, 12, 14, 0.8);      /* 暗色半透明 */
+  --overlay-bg: rgba(0, 0, 0, 0.6);     /* 暗色遮罩 */
+  --sidebar-shadow: 8px 0 40px rgba(0, 0, 0, 0.4);
+}
+
+[data-theme="light"] {
+  --bar-bg: rgba(247, 243, 238, 0.85);  /* 亮色半透明 */
+  --overlay-bg: rgba(0, 0, 0, 0.3);     /* 亮色遮罩（更轻） */
+  --sidebar-shadow: 8px 0 40px rgba(0, 0, 0, 0.1);
+}
+```
+
+### 踩坑记录
+
+- **硬编码颜色是主题切换的天敌**：任何直接写的 `rgba(13, 12, 14, ...)` 或 `rgba(0, 0, 0, ...)` 在亮色主题下都会暴露问题。必须全部提取为 CSS 变量。
+- **亮色主题下毛玻璃效果需要不同底色**：`backdrop-filter: blur()` 的效果取决于底层颜色，暗色用 `rgba(13,12,14,0.8)` 亮色用 `rgba(247,243,238,0.85)` 才能保持一致的模糊质感。
+
+### 设计决策
+
+- **暖白而非冷白**：亮色主题背景用 `#f7f3ee`（暖白）而非 `#ffffff`（纯白），保持与暗色主题一致的温暖调性。珊瑚色 accent 在暖白上同样和谐。
+- **默认暗色**：聊天类应用暗色更舒适（尤其是夜间），且项目原本就是暗色设计。亮色作为可选切换。
+- **SVG 图标而非 emoji**：太阳/月亮使用内联 SVG，避免 emoji 在不同平台渲染不一致，且颜色跟随 `currentColor` 自动适配主题。
+- **切换按钮放在 ChatHeader**：Header 是始终可见的区域，切换操作频率低，不需要放在侧边栏。
+
+---
+
+## 2026-06-09 | 补充：移动端适配与主题切换进阶知识
+
+> 以下内容面向没有移动端适配和主题切换经验的开发者，详细解释每个概念背后的原理。
+
+### 一、color-scheme 属性详解
+
+#### 它做了什么？
+
+```css
+:root {
+  color-scheme: dark;    /* 告诉浏览器：这个页面是暗色的 */
+}
+
+[data-theme="light"] {
+  color-scheme: light;   /* 告诉浏览器：这个页面是亮色的 */
+}
+```
+
+`color-scheme` 影响浏览器原生控件的渲染风格：
+
+| 原生控件 | dark 模式 | light 模式 |
+|---------|----------|-----------|
+| 滚动条 | 深色轨道 + 浅色滑块 | 浅色轨道 + 深色滑块 |
+| `<input>` 默认样式 | 深色背景 | 浅色背景 |
+| `<select>` 下拉 | 深色面板 | 浅色面板 |
+| 表单自动填充 | 深色背景 | 浅色背景 |
+| 系统对话框 | 暗色风格 | 亮色风格 |
+
+**如果不设置**：浏览器不知道页面是亮是暗，可能用系统默认的控件风格，导致暗色页面上出现亮色滚动条或表单控件。
+
+#### 与 meta 标签的区别
+
+```html
+<meta name="color-scheme" content="dark light" />
+```
+
+`<meta>` 标签在 HTML 解析时就生效（比 CSS 更早），但只能声明支持哪些方案。CSS 的 `color-scheme` 属性可以精确控制当前元素及其子元素的配色方案。
+
+### 二、user-select: none 的继承行为
+
+#### 问题场景
+
+用户反馈：输入框外层 div 可以被选中（出现蓝色选中状态），体验不好。
+
+```
+┌── #input-area (div) ──────────────────────┐
+│  ┌── textarea ──────┐  ┌── button ────┐   │  ← 点击 div 空白处会出现选中蓝框
+│  │ 输入消息...       │  │    发送      │   │
+│  └──────────────────┘  └──────────────┘   │
+└───────────────────────────────────────────┘
+```
+
+#### 解决方案
+
+```css
+#input-area {
+  user-select: none;         /* 外层 div 不可选中 */
+  -webkit-user-select: none; /* Safari 兼容 */
+}
+```
+
+#### 关键知识：textarea 不受影响
+
+`user-select: none` 设置在父元素上，但 **textarea 内部仍然可以选中文字**。原因：
+
+1. **表单元素有默认的 `user-select` 值**：`<input>`、`<textarea>`、`contenteditable` 元素的浏览器默认 `user-select` 是 `contain`（允许在元素内部选中），不是 `inherit`
+2. **`none` 不覆盖表单元素的默认值**：因为 CSS 继承优先级低于元素默认样式，表单元素会保持自己的默认行为
+3. **如果需要让 textarea 也不可选中**：需要显式设置 `textarea { user-select: none; }`
+
+```
+继承链：
+#input-area (user-select: none)
+  └── textarea (user-select: contain ← 浏览器默认，不继承 none)
+  └── button (user-select: none ← 继承自父元素)
+```
+
+#### 其他需要 user-select: none 的场景
+
+| 场景 | 原因 |
+|------|------|
+| 欢迎页面文字 | 纯展示内容，选中无意义，误触选中影响体验 |
+| 按钮文字 | 点击按钮时不应选中文字 |
+| 图标/Logo | 选中后出现蓝色高亮，破坏视觉 |
+| 侧边栏导航项 | 点击导航不应选中文字 |
+| 消息时间戳 | hover 才显示的小文字，选中无意义 |
+
+### 三、亮色主题色板选择的完整思路
+
+#### 从暗色到亮色的转换规则
+
+不是简单地把颜色取反，而是遵循以下规则：
+
+**规则 1：背景层级方向反转**
+
+```
+暗色：越"高"的层级越亮（从底部往上）
+  --bg:         #0d0c0e  ← 最深（页面底色）
+  --bg-surface: #161518  ← 侧边栏
+  --bg-elevated:#1e1c21  ← 卡片/输入框
+  --bg-hover:   #252329  ← hover 态
+
+亮色：越"高"的层级越亮（从底部往上，但整体偏白）
+  --bg:         #f7f3ee  ← 最暗的亮色（页面底色，暖白）
+  --bg-surface: #ffffff  ← 纯白（侧边栏，最亮）
+  --bg-elevated:#f0ebe4  ← 略暗于白（卡片/输入框）
+  --bg-hover:   #e8e2d9  ← hover 态（更暗一点）
+```
+
+注意亮色中 `--bg-surface` 是纯白 `#ffffff`（侧边栏），而 `--bg` 是暖白 `#f7f3ee`（主背景）。这是因为侧边栏在亮色主题中应该是"白纸"效果，而主聊天区用暖白营造温暖氛围。
+
+**规则 2：前景色对比度必须达标**
+
+WCAG 2.1 AA 标准要求：正文文字与背景的对比度 ≥ 4.5:1。
+
+```
+暗色主题：
+  背景 #0d0c0e + 文字 #e8e2d9 → 对比度 ~14:1 ✅
+
+亮色主题：
+  背景 #f7f3ee + 文字 #1a1714 → 对比度 ~15:1 ✅
+  背景 #f7f3ee + 次要文字 #5c5650 → 对比度 ~6:1 ✅
+  背景 #f7f3ee + 弱化文字 #8a847e → 对比度 ~3.5:1 ⚠️ (仅用于标签/占位符)
+```
+
+**规则 3：accent 色在亮色下需要更深**
+
+```
+暗色：--accent: #d4764e（珊瑚色，在深色背景上很醒目）
+亮色：--accent: #c06a3e（同色系但更深，在浅色背景上才有足够对比度）
+```
+
+同样的 `#d4764e` 在白色背景上对比度只有 ~3.2:1，不达标。加深到 `#c06a3e` 后对比度 ~4.6:1，刚好达标。
+
+**规则 4：半透明色的 alpha 值需要调整**
+
+```
+暗色：--accent-soft: rgba(212, 118, 78, 0.12)  ← 在深色背景上 12% 就够明显
+亮色：--accent-soft: rgba(192, 106, 62, 0.08)   ← 在浅色背景上 8% 就够，12% 太重
+```
+
+亮色背景上同样的颜色更"显眼"，所以 alpha 要降低。
+
+**规则 5：边框方向反转**
+
+```
+暗色：--border: rgba(255, 255, 255, 0.06)  ← 白色半透明（在深色背景上）
+亮色：--border: rgba(0, 0, 0, 0.08)        ← 黑色半透明（在浅色背景上）
+```
+
+暗色主题的边框是"白色微光"，亮色主题的边框是"黑色微影"。
+
+#### 完整色板对比表
+
+| 变量 | 暗色值 | 亮色值 | 转换逻辑 |
+|------|--------|--------|---------|
+| `--bg` | `#0d0c0e` | `#f7f3ee` | 深黑 → 暖白 |
+| `--bg-surface` | `#161518` | `#ffffff` | 深灰 → 纯白 |
+| `--bg-elevated` | `#1e1c21` | `#f0ebe4` | 中灰 → 浅暖灰 |
+| `--bg-hover` | `#252329` | `#e8e2d9` | 浅灰 → 暖灰 |
+| `--fg` | `#e8e2d9` | `#1a1714` | 亮色 → 深色（反转） |
+| `--fg-secondary` | `#a09a92` | `#5c5650` | 中亮 → 中暗 |
+| `--fg-muted` | `#6b665f` | `#8a847e` | 暗灰 → 浅灰 |
+| `--accent` | `#d4764e` | `#c06a3e` | 珊瑚色加深 |
+| `--accent-soft` | `rgba(212,118,78,0.12)` | `rgba(192,106,62,0.08)` | alpha 降低 |
+| `--border` | `rgba(255,255,255,0.06)` | `rgba(0,0,0,0.08)` | 白光 → 黑影 |
+| `--bar-bg` | `rgba(13,12,14,0.8)` | `rgba(247,243,238,0.85)` | 半透明跟随主题 |
+| `--overlay-bg` | `rgba(0,0,0,0.6)` | `rgba(0,0,0,0.3)` | 亮色下遮罩更轻 |
+| `--shadow-sm` | `rgba(0,0,0,0.2)` | `rgba(0,0,0,0.06)` | 亮色下阴影更轻 |
+
+### 四、useTheme Hook 设计详解
+
+#### 完整代码逐行解析
+
+```typescript
+import { useState, useEffect, useCallback } from 'react';
+
+export type Theme = 'dark' | 'light';
+
+const STORAGE_KEY = 'companion-theme';
+
+// 主题对应的 meta theme-color 值
+const META_THEME_COLORS: Record<Theme, string> = {
+  dark: '#0d0c0e',
+  light: '#f7f3ee',
+};
+```
+
+**为什么用 `Record<Theme, string>` 而不是两个变量？**
+
+- 类型安全：如果以后新增主题（如 `dim`），TypeScript 会强制你补全对应的颜色
+- 一处定义，查找方便
+
+```typescript
+function getInitialTheme(): Theme {
+  try {
+    const stored = localStorage.getItem(STORAGE_KEY);
+    if (stored === 'light' || stored === 'dark') return stored;
+  } catch {}
+  // localStorage 可能被隐私模式禁用，try-catch 必不可少
+  if (window.matchMedia('(prefers-color-scheme: light)').matches) {
+    return 'light';
+  }
+  return 'dark';  // 默认暗色
+}
+```
+
+**优先级链：localStorage 手动选择 > 系统偏好 > 默认暗色**
+
+1. 用户手动选过 → 尊重用户选择（最高优先级）
+2. 没选过但系统是亮色 → 跟随系统
+3. 都没有 → 默认暗色（聊天应用暗色更舒适）
+
+```typescript
+function updateMetaThemeColor(t: Theme) {
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) meta.setAttribute('content', META_THEME_COLORS[t]);
+}
+```
+
+**为什么不用 `meta.content = ...`？**
+
+`setAttribute` 是更通用的写法，对于自定义 meta 标签更可靠。
+
+```typescript
+export function useTheme() {
+  const [theme, setThemeState] = useState<Theme>(getInitialTheme);
+
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme);
+    updateMetaThemeColor(theme);
+    try {
+      localStorage.setItem(STORAGE_KEY, theme);
+    } catch {}
+  }, [theme]);
+
+  const toggleTheme = useCallback(() => {
+    setThemeState((prev) => (prev === 'dark' ? 'light' : 'dark'));
+  }, []);
+
+  return { theme, toggleTheme };
+}
+```
+
+**为什么 `toggleTheme` 用 `useCallback`？**
+
+- `toggleTheme` 会被传给按钮的 `onClick`
+- 不包 `useCallback` 的话，每次渲染都会创建新函数，导致按钮不必要的重渲染
+- 空依赖数组 `[]` 表示函数永远不会变
+
+**为什么在 `App.tsx` 中也调用 `useTheme()`？**
+
+`ChatHeader` 中的 `useTheme` 负责切换按钮的渲染和交互。但 `App.tsx` 中也调用一次，确保 `useEffect`（设置 `data-theme` 和 `localStorage`）在应用最顶层就执行。这样即使 `ChatHeader` 还没渲染，主题就已经初始化了。
+
+### 五、FOUC 防闪烁的完整方案
+
+#### 问题复现
+
+没有防闪烁时，亮色主题用户的加载过程：
+
+```
+时间线：
+0ms   HTML 开始解析
+      → <html> 没有 data-theme 属性
+      → CSS :root 变量生效（暗色）
+      
+50ms  CSS 加载完成
+      → 页面渲染为暗色 ← 用户看到了暗色！
+
+200ms React JS 加载完成
+      → useTheme 读取 localStorage
+      → 设置 data-theme="light"
+      → CSS 变量切换为亮色 ← 闪烁！
+```
+
+用户看到：暗色 → 亮色的闪烁，体验很差。
+
+#### 解决方案：内联脚本
+
+```html
+<head>
+  <meta name="theme-color" content="#0d0c0e" />
+  <script>
+    (function(){
+      try {
+        var t = localStorage.getItem('companion-theme');
+        if (t === 'light') {
+          document.documentElement.setAttribute('data-theme', 'light');
+          document.querySelector('meta[name="theme-color"]').content = '#f7f3ee';
+        }
+      } catch(e){}
+    })();
+  </script>
+  <!-- CSS 在后面加载，但 data-theme 已经设置好了 -->
+  <link href="..." rel="stylesheet" />
+</head>
+```
+
+修复后的时间线：
+
+```
+0ms   HTML 开始解析
+      → <script> 同步执行
+      → 读取 localStorage → 设置 data-theme="light"
+      → 更新 meta theme-color
+      
+50ms  CSS 加载完成
+      → [data-theme="light"] 选择器匹配
+      → 亮色变量生效 ← 首次渲染就是亮色！✅
+
+200ms React JS 加载完成
+      → useTheme 读取 localStorage → 'light'
+      → data-theme 已经是 'light'，无需变更 ✅
+```
+
+**关键要点：**
+
+1. 脚本必须在 `<head>` 中，CSS `<link>` 之前
+2. 脚本必须是同步的（不能 `async` 或 `defer`），否则可能在 CSS 之后执行
+3. 只处理 `light` 的情况：因为默认就是暗色，不需要额外设置
+4. `try-catch` 必不可少：隐私模式下 `localStorage` 会抛异常
+
+### 六、移动端主题切换的特殊考虑
+
+#### 1. meta theme-color 的重要性
+
+桌面浏览器没有地址栏颜色概念，但移动端浏览器有：
+
+```
+Chrome Android：地址栏颜色跟随 theme-color
+Safari iOS：状态栏颜色跟随 apple-mobile-web-app-status-bar-style
+PWA 模式：启动画面颜色跟随 theme-color
+```
+
+如果不联动更新：
+
+```
+暗色主题 → 地址栏是暗色 #0d0c0e ✅
+切换到亮色 → 地址栏还是暗色 #0d0c0e ❌ 突兀！
+```
+
+#### 2. 滚动条在亮色主题下的样式
+
+暗色主题的滚动条是"深色轨道 + 浅色滑块"：
+
+```css
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.08);  /* 白色半透明滑块 */
+}
+```
+
+亮色主题下这个滑块几乎看不见（白色在白色背景上）。需要覆盖：
+
+```css
+[data-theme="light"] ::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.12);  /* 黑色半透明滑块 */
+}
+```
+
+#### 3. 移动端切换按钮的触摸友好设计
+
+```css
+.theme-toggle {
+  width: 36px;       /* ≥ 44pt 的一半，但实际触摸区域由 padding 撑大 */
+  height: 36px;
+  border-radius: var(--radius-sm);
+  /* ... */
+}
+
+.theme-toggle:active {
+  transform: scale(0.92);  /* 按压反馈 */
+}
+```
+
+在移动端，36px 的视觉尺寸加上 8px 的 padding，实际触摸区域约 44px，满足 Apple HIG 要求。
+
+### 踩坑记录
+
+- **输入框外层 div 可被选中**：`#input-area` 没有设置 `user-select: none`，点击空白处会出现蓝色选中状态。但 textarea 内部不受影响，因为表单元素的 `user-select` 默认值是 `contain`，不继承父元素的 `none`。
+- **硬编码颜色是主题切换的天敌**：任何直接写的 `rgba(13, 12, 14, ...)` 或 `rgba(0, 0, 0, ...)` 在亮色主题下都会暴露问题。必须全部提取为 CSS 变量。
+- **亮色主题下毛玻璃效果需要不同底色**：`backdrop-filter: blur()` 的效果取决于底层颜色，暗色用 `rgba(13,12,14,0.8)` 亮色用 `rgba(247,243,238,0.85)` 才能保持一致的模糊质感。
+- **亮色下遮罩层太重**：暗色用 `rgba(0,0,0,0.6)` 做遮罩，直接用在亮色上太暗了。亮色下改为 `rgba(0,0,0,0.3)` 更合适。
+
+---
+
+## 2026-06-09 | Docker 部署详解
+
+> 以下内容面向没有 Docker 使用经验的开发者，从零开始解释 Docker 是什么、为什么需要它、以及本项目的 Docker 部署方案是如何设计的。
+
+### 一、Docker 是什么？为什么需要它？
+
+#### 没有 Docker 时的部署流程
+
+假设你要把项目部署到一台新服务器上，你需要：
+
+```
+1. 安装 Node.js 24          ← 版本不对？编译失败
+2. 安装 Python 3.12         ← 版本不对？依赖冲突
+3. 安装 PostgreSQL 16       ← 还要装 pgvector 扩展
+4. 安装 pip/uv              ← Python 包管理器
+5. 安装 npm 依赖            ← 网络问题？依赖缺失？
+6. 安装 Python 依赖         ← 同上
+7. 下载 ONNX 模型           ← 400MB 文件
+8. 配置环境变量             ← 漏配一个？服务启动失败
+9. 配置 Nginx 反向代理      ← 还要装 Nginx
+10. 配置进程守护            ← 服务挂了要自动重启
+11. 配置防火墙规则          ← 端口暴露
+```
+
+**问题：** 每换一台服务器就要重来一遍，而且不同服务器环境可能不同（操作系统、库版本、权限等），经常出现"在我电脑上能跑"的问题。
+
+#### 有了 Docker 后
+
+```
+1. 安装 Docker              ← 只需要这一个
+2. docker compose up        ← 一条命令，所有服务自动启动
+```
+
+Docker 把应用和它的整个运行环境（操作系统、依赖库、配置文件）打包成一个**镜像（Image）**。镜像可以在任何安装了 Docker 的机器上运行，保证环境完全一致。
+
+#### 核心概念
+
+| 概念 | 类比 | 说明 |
+|------|------|------|
+| **镜像（Image）** | 安装光盘 | 只读模板，包含运行应用所需的一切 |
+| **容器（Container）** | 运行中的虚拟机 | 镜像的运行实例，互相隔离 |
+| **Dockerfile** | 安装脚本 | 描述如何构建镜像的步骤 |
+| **docker-compose.yml** | 编排清单 | 定义多个容器如何协作 |
+| **Volume** | 外接硬盘 | 容器删除后数据不丢失的存储 |
+| **Registry** | 应用商店 | Docker Hub 等镜像仓库 |
+
+#### Docker vs 虚拟机
+
+```
+虚拟机：
+┌─────────────────────────────┐
+│  应用 A  │  应用 B  │ 应用 C │
+├──────────┼──────────┼────────┤
+│  完整OS  │  完整OS  │ 完整OS │  ← 每个 VM 都有自己的操作系统，占几个 GB
+├──────────┴──────────┴────────┤
+│         宿主机 OS             │
+├──────────────────────────────┤
+│           硬件               │
+└──────────────────────────────┘
+
+Docker：
+┌────────┬────────┬────────┐
+│ 应用 A │ 应用 B │ 应用 C │
+├────────┴────────┴────────┤
+│      Docker 引擎          │  ← 共享宿主机内核，每个容器只占几十 MB
+├──────────────────────────┤
+│       宿主机 OS           │
+├──────────────────────────┤
+│         硬件              │
+└──────────────────────────┘
+```
+
+- Docker 容器共享宿主机内核，不需要每个容器都装一个完整 OS
+- 容器启动只需秒级，虚拟机需要分钟级
+- 容器占用资源少（MB 级），虚拟机占用多（GB 级）
+
+### 二、Dockerfile 详解
+
+#### 什么是 Dockerfile？
+
+Dockerfile 是一个文本文件，包含构建镜像的每一步指令。Docker 按顺序执行这些指令，最终生成一个可运行的镜像。
+
+#### 本项目的 API Dockerfile
+
+```dockerfile
+# syntax=docker/dockerfile:1    ← 启用 Docker BuildKit 语法增强
+
+# ──── 第 1 阶段：安装 API 依赖 ────
+FROM node:24-bookworm-slim AS api-deps
+# FROM：基于哪个镜像开始。node:24-bookworm-slim 是 Node.js 24 的精简版
+# AS：给这个阶段起名，后面可以引用
+
+WORKDIR /app                    # 设置工作目录为 /app
+COPY package*.json ./           # 只复制 package.json（利用 Docker 缓存）
+RUN npm ci                      # 安装依赖（ci = clean install，比 install 更严格）
+
+# ──── 第 2 阶段：安装 Web 前端依赖 ────
+FROM node:24-bookworm-slim AS web-deps
+WORKDIR /app/web
+COPY web/package*.json ./
+RUN npm ci
+
+# ──── 第 3 阶段：编译所有代码 ────
+FROM node:24-bookworm-slim AS builder
+WORKDIR /app
+COPY --from=api-deps /app/node_modules ./node_modules     # 从第 1 阶段复制依赖
+COPY --from=web-deps /app/web/node_modules ./web/node_modules  # 从第 2 阶段复制依赖
+COPY . .                        # 复制所有源代码
+RUN npm run build:web           # 编译 React 前端 → web/dist
+RUN npm run build               # 编译 NestJS 后端 → dist
+
+# ──── 第 4 阶段：运行时镜像 ────
+FROM node:24-bookworm-slim AS runtime
+WORKDIR /app
+ENV NODE_ENV=production         # 设置生产环境变量
+COPY package*.json ./
+RUN npm ci --omit=dev && npm cache clean --force  # 只装生产依赖 + 清缓存
+COPY --from=builder /app/dist ./dist              # 从编译阶段复制后端产物
+COPY --from=builder /app/web/dist ./web/dist      # 从编译阶段复制前端产物
+EXPOSE 3000                     # 声明容器监听端口
+CMD ["node", "dist/main.js"]    # 容器启动时执行的命令
+```
+
+#### 为什么要用多阶段构建？
+
+```
+不用多阶段构建：
+  镜像包含：Node.js + npm + TypeScript + 所有源码 + 编译产物 + 开发依赖
+  镜像大小：~1.5 GB
+
+使用多阶段构建：
+  镜像包含：Node.js + 生产依赖 + 编译产物
+  镜像大小：~300 MB
+  
+节省了 80%！因为编译工具（TypeScript、Vite、ESBuild 等）只在构建时需要，
+运行时不需要。多阶段构建只把最终产物复制到精简的运行时镜像中。
+```
+
+#### Docker 缓存机制
+
+Docker 构建镜像时，每一步都会生成一个中间层。如果 Dockerfile 和输入文件没变，Docker 会复用缓存的中间层，不重新执行。
+
+```
+COPY package*.json ./    ← package.json 没变 → 复用缓存 ✅
+RUN npm ci               ← 上一条复用了缓存 → 这条也复用 ✅
+
+COPY . .                 ← 源码变了 → 缓存失效 ❌
+RUN npm run build        ← 上一条缓存失效 → 这条也失效 ❌
+```
+
+**最佳实践：** 先 `COPY package*.json` + `RUN npm ci`，再 `COPY . .`。这样只要依赖不变，安装步骤就能复用缓存，只重新编译源码。
+
+#### Python Embedding Dockerfile
+
+```dockerfile
+FROM python:3.12-slim AS runtime
+WORKDIR /app
+
+# 防止 Python 生成 .pyc 文件和写入字节码缓存
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+
+# 安装 uv（新一代 Python 包管理器，比 pip 快 10-100 倍）
+RUN pip install --no-cache-dir uv
+
+# 先复制依赖声明文件（利用缓存）
+COPY pyproject.toml uv.lock ./
+RUN uv sync --frozen --no-dev    # --frozen：严格按 lock 文件安装；--no-dev：不装开发依赖
+
+# 复制源码
+COPY main.py embedder.py ./
+RUN mkdir -p /app/models         # 创建模型目录（模型文件通过 volume 挂载，不打入镜像）
+
+EXPOSE 8000
+CMD ["uv", "run", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+```
+
+**为什么模型不打入镜像？**
+
+ONNX 模型文件约 400MB。如果打入镜像：
+- 每次构建镜像都要复制 400MB
+- 推送/拉取镜像都很慢
+- 模型更新要重新构建镜像
+
+通过 volume 挂载（`./python/models:/app/models:ro`）：
+- 镜像只有几十 MB
+- 模型文件独立管理，更新不影响镜像
+- `:ro` 表示只读挂载，容器不会修改模型文件
+
+### 三、docker-compose.yml 详解
+
+#### 什么是 Docker Compose？
+
+Docker Compose 是一个编排工具，用一个 YAML 文件定义多个容器如何协作。相当于"一键启动整个应用栈"。
+
+#### 完整解析
+
+```yaml
+services:                          # 定义所有服务（容器）
+
+  # ──── 服务 1：PostgreSQL 数据库 ────
+  postgres:
+    image: pgvector/pgvector:pg16  # 使用 pgvector 官方镜像（PostgreSQL 16 + 向量扩展）
+    container_name: companion-postgres
+    environment:                    # 环境变量（创建数据库时的配置）
+      POSTGRES_USER: ${DB_USER:-postgres}       # ${VAR:-default} 表示：有 VAR 用 VAR，没有用 default
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
+      POSTGRES_DB: ${DB_NAME:-companion}
+    ports:
+      - "${DB_PORT:-54321}:5432"   # 宿主机端口:容器端口
+                                    # 54321 是你电脑上的端口，5432 是容器内的端口
+                                    # 这样不会和你电脑上已有的 PostgreSQL 冲突
+    volumes:
+      - postgres_data:/var/lib/postgresql/data  # 数据持久化：数据库文件存在命名卷中
+    healthcheck:                    # 健康检查：Docker 定期执行这个命令判断服务是否正常
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres} -d ${DB_NAME:-companion}"]
+      interval: 5s                  # 每 5 秒检查一次
+      timeout: 5s                   # 超时 5 秒算失败
+      retries: 20                   # 连续失败 20 次才标记为 unhealthy
+
+  # ──── 服务 2：Python Embedding 服务 ────
+  embedding:
+    build:
+      context: ./python             # 构建上下文：在 python/ 目录下找 Dockerfile
+    container_name: companion-embedding
+    environment:
+      MOCK_EMBEDDING: ${MOCK_EMBEDDING:-0}       # 0=真实模型，1=Mock
+      EMBEDDING_MODEL_PATH: ${EMBEDDING_MODEL_PATH:-/app/models/jina-embeddings-v2-base-zh.onnx}
+      EMBEDDING_TOKENIZER_PATH: ${EMBEDDING_TOKENIZER_PATH:-/app/models/tokenizer.json}
+    ports:
+      - "${EMBEDDING_PORT:-8000}:8000"
+    volumes:
+      - ./python/models:/app/models:ro  # 挂载本地模型目录到容器内，:ro=只读
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+
+  # ──── 服务 3：NestJS API + Web 前端 ────
+  api:
+    build:
+      context: .                    # 构建上下文：项目根目录
+    container_name: companion-api
+    environment:
+      NODE_ENV: production
+      PORT: ${PORT:-3000}
+      DB_HOST: postgres             # ← 关键！不是 localhost，而是服务名 postgres
+      DB_PORT: 5432                 # ← 容器内部端口，不是宿主机端口
+      DB_USER: ${DB_USER:-postgres}
+      DB_PASSWORD: ${DB_PASSWORD:-postgres}
+      DB_NAME: ${DB_NAME:-companion}
+      DB_LOGGING: ${DB_LOGGING:-false}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY}   # LLM API Key，必须配置
+      PYTHON_EMBED_URL: http://embedding:8000  # ← 服务名 embedding，不是 localhost
+    ports:
+      - "${PORT:-3000}:3000"
+    depends_on:                     # 依赖关系：等这两个服务健康后才启动
+      postgres:
+        condition: service_healthy
+      embedding:
+        condition: service_healthy
+    restart: unless-stopped         # 除非手动停止，否则自动重启
+
+volumes:
+  postgres_data:                    # 命名卷：Docker 管理的持久化存储
+```
+
+#### 关键概念详解
+
+**1. 端口映射 `ports: "宿主机端口:容器端口"`**
+
+```
+你的电脑（宿主机）          Docker 容器
+                    ┌──────────────┐
+  localhost:54321 ──┤──→ :5432     │  postgres
+                    │              │
+  localhost:8000  ──┤──→ :8000     │  embedding
+                    │              │
+  localhost:3000  ──┤──→ :3000     │  api
+                    └──────────────┘
+```
+
+- 容器内部服务监听自己的端口（5432、8000、3000）
+- 宿主机通过映射端口访问（54321、8000、3000）
+- 不同容器的内部端口可以相同（互相隔离），但宿主机端口不能冲突
+
+**2. 服务发现 `DB_HOST: postgres`**
+
+在 Docker Compose 的内部网络中，服务名就是主机名：
+
+```
+API 容器内：
+  DB_HOST=postgres  → 解析为 postgres 容器的 IP 地址
+  PYTHON_EMBED_URL=http://embedding:8000  → 解析为 embedding 容器的 IP 地址
+```
+
+**绝对不能用 `localhost`！** 因为每个容器有自己的网络命名空间，`localhost` 指的是容器自己，不是宿主机。
+
+**3. 健康检查 `healthcheck`**
+
+```
+启动顺序：
+  1. postgres 启动 → 每 5s 检查 pg_isready → 通过后标记 healthy
+  2. embedding 启动 → 每 10s 检查 /health → 通过后标记 healthy
+  3. api 启动（depends_on condition: service_healthy）
+     → postgres 和 embedding 都 healthy 后才开始启动
+```
+
+没有健康检查的话，API 可能在数据库还没准备好时就启动，导致连接失败。
+
+**4. Volume 数据持久化**
+
+```
+docker compose down       → 停止并删除容器，但 postgres_data 卷保留 ✅
+docker compose down -v    → 停止并删除容器，同时删除卷 ❌ 数据全没了
+```
+
+Volume 的生命周期独立于容器。即使容器被删除重建，数据库数据依然存在。
+
+**5. 环境变量替换 `${VAR:-default}`**
+
+```yaml
+POSTGRES_USER: ${DB_USER:-postgres}
+# 如果 .env.docker 中定义了 DB_USER=admin → 使用 admin
+# 如果没定义 → 使用默认值 postgres
+```
+
+### 四、.dockerignore 详解
+
+#### 为什么需要 .dockerignore？
+
+`COPY . .` 会把当前目录所有文件复制到镜像中。但有些文件不应该进入镜像：
+
+```
+node_modules/     ← 开发依赖，镜像中通过 npm ci 重新安装
+dist/             ← 编译产物，镜像中通过 npm run build 重新生成
+.git/             ← Git 历史，运行时不需要
+.env              ← 可能包含密钥，不能打入镜像！
+*.log             ← 日志文件
+python/models/*.onnx  ← 400MB 模型文件，通过 volume 挂载
+```
+
+#### 本项目的 .dockerignore
+
+```
+node_modules              ← API 的开发依赖
+dist                      ← API 编译产物
+web/node_modules          ← 前端的开发依赖
+web/dist                  ← 前端编译产物
+python/.venv              ← Python 虚拟环境
+python/__pycache__        ← Python 字节码缓存
+python/**/*.pyc           ← Python 编译缓存
+python/models/*.onnx      ← ONNX 模型（太大，volume 挂载）
+exports                   ← 导出数据
+coverage                  ← 测试覆盖率
+pgdata                    ← 本地 PostgreSQL 数据
+.git                      ← Git 历史
+.env                      ← 环境变量（可能含密钥）
+*.log                     ← 日志
+tsconfig.build.tsbuildinfo ← TypeScript 增量编译缓存
+web/tsconfig.tsbuildinfo  ← 同上
+```
+
+### 五、部署流程详解
+
+#### 步骤 1：准备环境变量
+
+```powershell
+# 复制模板
+copy .env.docker.example .env.docker
+
+# 编辑 .env.docker，至少修改这两项：
+# DB_PASSWORD=change-me        ← 改成强密码
+# DEEPSEEK_API_KEY=sk-xxxx     ← 填入你的 DeepSeek API Key
+```
+
+#### 步骤 2：准备 Embedding 模型
+
+**方式 A：使用 Mock 模式（快速测试）**
+
+```text
+# .env.docker 中设置
+MOCK_EMBEDDING=1
+```
+
+Mock 模式不加载真实模型，返回随机向量。适合测试 Docker 栈是否能正常启动。
+
+**方式 B：使用真实模型（生产推荐）**
+
+```powershell
+cd python
+python scripts/download_model.py   # 下载 ONNX 模型 + tokenizer
+```
+
+下载后 `python/models/` 目录会包含：
+- `jina-embeddings-v2-base-zh.onnx`（~400MB）
+- `tokenizer.json`
+
+#### 步骤 3：构建并启动
+
+```powershell
+# 构建镜像 + 启动所有服务
+docker compose --env-file .env.docker up --build
+
+# 后台运行（加 -d）
+docker compose --env-file .env.docker up --build -d
+```
+
+**`--env-file .env.docker`**：指定环境变量文件，而不是默认的 `.env`
+
+**`--build`**：每次启动前重新构建镜像（确保代码变更生效）
+
+#### 步骤 4：访问应用
+
+```
+http://localhost:3000    ← Web 聊天界面
+```
+
+#### 步骤 5：停止服务
+
+```powershell
+# 停止并删除容器（保留数据库数据）
+docker compose --env-file .env.docker down
+
+# 停止并删除容器 + 数据库数据
+docker compose --env-file .env.docker down -v
+
+# 查看运行状态
+docker compose --env-file .env.docker ps
+
+# 查看日志
+docker compose --env-file .env.docker logs api
+docker compose --env-file .env.docker logs -f    # -f 实时跟踪
+```
+
+### 六、Docker 常用命令速查
+
+| 命令 | 说明 |
+|------|------|
+| `docker compose up` | 启动所有服务 |
+| `docker compose up -d` | 后台启动 |
+| `docker compose up --build` | 重新构建镜像后启动 |
+| `docker compose down` | 停止并删除容器 |
+| `docker compose down -v` | 停止并删除容器 + 卷 |
+| `docker compose ps` | 查看服务状态 |
+| `docker compose logs api` | 查看 API 日志 |
+| `docker compose logs -f` | 实时跟踪所有日志 |
+| `docker compose restart api` | 重启 API 服务 |
+| `docker compose build` | 只构建镜像，不启动 |
+| `docker images` | 查看本地所有镜像 |
+| `docker system prune` | 清理未使用的镜像/容器/网络 |
+
+### 七、常见问题排查
+
+#### 1. 端口被占用
+
+```
+Error: Bind for 0.0.0.0:3000 failed: port is already allocated
+```
+
+解决：修改 `.env.docker` 中的端口映射，如 `PORT=3001`
+
+#### 2. 数据库连接失败
+
+```
+Error: connect ECONNREFUSED 127.0.0.1:5432
+```
+
+原因：API 容器内不能用 `localhost` 连接数据库，必须用服务名 `postgres`。检查 `docker-compose.yml` 中 `DB_HOST: postgres`。
+
+#### 3. Embedding 服务健康检查失败
+
+```
+embedding is unhealthy
+```
+
+排查：
+```powershell
+docker compose --env-file .env.docker logs embedding  # 查看日志
+```
+
+常见原因：模型文件不存在且 `MOCK_EMBEDDING=0`。改为 `MOCK_EMBEDDING=1` 或下载模型。
+
+#### 4. 镜像构建失败
+
+```
+npm ERR! code ERESOLVE
+```
+
+原因：依赖版本冲突。尝试：
+```powershell
+docker compose build --no-cache api  # 不用缓存重新构建
+```
+
+#### 5. 容器内无法访问宿主机服务
+
+如果 API 需要访问宿主机上的其他服务（如本地 LLM），使用特殊 DNS：
+
+```
+host.docker.internal    # Docker Desktop 提供的特殊域名，指向宿主机
+```
+
+### 踩坑记录
+
+- **模型文件打入镜像导致镜像过大**：最初考虑把 ONNX 模型打入 embedding 镜像，但 400MB 的模型会让镜像构建和推送非常慢。改为 volume 挂载后，镜像只有几十 MB。
+- **DB_HOST 不能用 localhost**：在 Docker Compose 网络中，每个容器有独立的网络命名空间，`localhost` 指向容器自己。必须用服务名（如 `postgres`）访问其他容器。
+- **健康检查避免启动顺序问题**：最初没有健康检查，API 在数据库还没准备好时就启动导致连接失败。加上 `depends_on: condition: service_healthy` 后，API 会等待数据库就绪。
+- **npm ci vs npm install**：Dockerfile 中用 `npm ci` 而不是 `npm install`。`ci` 严格按照 `package-lock.json` 安装，结果可复现；`install` 可能自动升级依赖，导致不同构建产生不同结果。
+
+### 设计决策
+
+- **多阶段构建而非单阶段**：最终运行时镜像只包含 Node.js + 生产依赖 + 编译产物，体积从 ~1.5GB 降到 ~300MB。
+- **PostgreSQL 用官方 pgvector 镜像**：不需要自己安装 pgvector 扩展，一条 `image: pgvector/pgvector:pg16` 就搞定。
+- **环境变量默认值**：`docker-compose.yml` 中所有变量都有 `:-default`，不配 `.env.docker` 也能启动（除了 `DEEPSEEK_API_KEY`）。
+- **命名卷而非绑定挂载**：数据库数据用 `postgres_data` 命名卷而不是 `./pgdata` 绑定挂载。命名卷由 Docker 管理，权限和性能更好。
+- **Embedding 模型只读挂载**：`./python/models:/app/models:ro`，`:ro` 防止容器意外修改模型文件。

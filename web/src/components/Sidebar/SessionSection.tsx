@@ -1,13 +1,18 @@
 import { useState } from 'react';
 import { useAppContext } from '../../context/AppContext';
+import { useToast } from '../Toast';
 import SessionItem from './SessionItem';
 import ImportModal from './ImportModal';
 
-export default function SessionSection() {
-  const { state, createSession, selectSession, deleteSession } = useAppContext();
+interface SessionSectionProps {
+  onSessionSelect: (id: string) => void;
+}
+
+export default function SessionSection({ onSessionSelect }: SessionSectionProps) {
+  const { state, createSession, deleteSession } = useAppContext();
+  const { toast } = useToast();
   const [showImport, setShowImport] = useState(false);
 
-  // 只显示当前角色的会话
   const filtered = state.currentCharacterId
     ? state.sessions.filter((s) => s.characterId === state.currentCharacterId)
     : state.sessions;
@@ -16,9 +21,14 @@ export default function SessionSection() {
     if (!confirm('删除这个会话？')) return;
     try {
       await deleteSession(id);
+      toast('会话已删除', 'success');
     } catch (err) {
-      alert('删除失败: ' + (err as Error).message);
+      toast('删除失败: ' + (err as Error).message, 'error');
     }
+  };
+
+  const handleSelect = (id: string) => {
+    onSessionSelect(id);
   };
 
   return (
@@ -29,24 +39,27 @@ export default function SessionSection() {
           disabled={!state.currentCharacterId}
           onClick={createSession}
         >
-          ＋ 新建会话
+          + 新建会话
         </button>
         <button
           id="import-btn"
           disabled={!state.currentSessionId}
           onClick={() => setShowImport(true)}
-          title="导入聊天记录（微信/QQ/纯文本）"
+          title="导入聊天记录"
         >
-          📥 导入
+          导入
         </button>
       </div>
       <div id="session-list">
+        {filtered.length === 0 && state.currentCharacterId && (
+          <p className="empty-hint">暂无会话，点击上方新建</p>
+        )}
         {filtered.map((s) => (
           <SessionItem
             key={s.id}
             session={s}
             isActive={s.id === state.currentSessionId}
-            onSelect={selectSession}
+            onSelect={handleSelect}
             onDelete={handleDelete}
           />
         ))}

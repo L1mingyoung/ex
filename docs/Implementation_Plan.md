@@ -392,3 +392,247 @@ API：`POST /api/import/chat-records` 新增 `mode: 'merge' | 'replace'` 字段
 - 新增 `.env.docker.example`：Docker 部署专用环境变量模板。
 - 新增 `docs/Docker_Deployment.md`：记录启动、停止、模型准备和 mock embedding 测试方式。
 - `docker compose config` 已通过配置解析验证。
+
+---
+
+## 2026-06-09 前端移动端适配 + UI 重设计
+
+### 移动端适配方案
+
+采用 **纯 CSS 响应式** 方案，不引入 Taro / RN 等跨端框架。理由：项目只需 H5 移动端兼容，React + CSS 响应式是最轻量高效的选择。
+
+### 适配细节清单
+
+#### 1. 视口与安全区域
+
+| 优化项 | 实现 | 文件 |
+|--------|------|------|
+| 视口锁定 | `viewport` 禁止缩放 + `viewport-fit=cover` | `index.html` |
+| iOS 全屏 | `apple-mobile-web-app-capable` + `black-translucent` 状态栏 | `index.html` |
+| 主题色 | `theme-color` 匹配暗色背景 `#0d0c0e` | `index.html` |
+| 安全区域 CSS 变量 | `--safe-top/bottom/left/right` = `env(safe-area-inset-*)` | `index.css` |
+| 动态视口高度 | `100dvh` 替代 `100vh`（解决 iOS 地址栏缩放问题） | `index.css` |
+| 禁止过度滚动 | `overscroll-behavior: none` | `index.css` |
+| 禁止文字自动调整 | `-webkit-text-size-adjust: 100%` | `index.css` |
+| 禁止点击高亮 | `-webkit-tap-highlight-color: transparent` | `index.css` |
+
+#### 2. 侧边栏 → 抽屉式导航
+
+| 优化项 | 实现 | 文件 |
+|--------|------|------|
+| 桌面端 | 固定左侧 300px 侧边栏 | `index.css` |
+| 移动端 | `position: fixed` 抽屉，`translateX(-100%)` 隐藏 | `index.css` |
+| 抽屉宽度 | `85vw`，最大 `360px` | `index.css` |
+| 滑入动画 | `transform` + `transition` + `ease-out` 曲线 | `index.css` |
+| 遮罩层 | `sidebar-overlay` 半透明 + `backdrop-filter: blur(6px)` | `index.css` / `App.tsx` |
+| 关闭按钮 | `.sidebar-close-btn` 仅移动端显示 | `Sidebar.css` |
+| 安全区域 | 抽屉内 `padding-top/bottom` 加 `var(--safe-*)` | `index.css` |
+| 选择后自动关闭 | `handleSelectSession` 调用 `setSidebarOpen(false)` | `App.tsx` |
+
+#### 3. 聊天区域移动端适配
+
+| 优化项 | 实现 | 文件 |
+|--------|------|------|
+| 汉堡菜单 | `.menu-btn` 仅移动端 `display: flex` | `ChatArea.css` / `ChatHeader.tsx` |
+| 消息气泡宽度 | 桌面 `max-width: 72%` → 移动 `88%` | `ChatArea.css` / `index.css` |
+| 输入框字体 | 移动端 `font-size: 16px`（防止 iOS 自动缩放） | `index.css` |
+| 输入框自适应高度 | `useEffect` 监听 `text` 变化，动态设置 `height` | `InputArea.tsx` |
+| 输入区安全区域 | `padding-bottom: calc(10px + var(--safe-bottom))` | `index.css` |
+| 聊天区安全区域 | `padding-top: var(--safe-top)` | `index.css` |
+| 触摸滚动 | `-webkit-overflow-scrolling: touch` | `ChatArea.css` |
+
+#### 4. 模态框移动端适配
+
+| 优化项 | 实现 | 文件 |
+|--------|------|------|
+| 全屏模态 | 移动端 `width: 100%` + `height: 100dvh` + `border-radius: 0` | `index.css` |
+| 安全区域 | `padding` 加 `var(--safe-top/bottom)` | `index.css` |
+| 表单字体 | `font-size: 16px`（防止 iOS 缩放） | `ChatArea.css` |
+| 按钮触摸区 | `min-height: 44px`（Apple HIG 最小触摸目标） | `ChatArea.css` |
+| 别名输入 | 移动端 `grid-template-columns: 1fr`（单列） | `index.css` |
+
+#### 5. 交互细节
+
+| 优化项 | 实现 | 文件 |
+|--------|------|------|
+| 删除按钮 | 移动端 `opacity: 0.4` 常显（无 hover） | `Sidebar.css` |
+| 编辑按钮 | 移动端 `opacity: 0.5` 常显 | `Sidebar.css` |
+| 按钮按压反馈 | `:active { transform: scale(0.92~0.98) }` | 多处 CSS |
+| 聚焦环 | `box-shadow: 0 0 0 3px var(--accent-soft)` | 多处 CSS |
+
+### UI 重设计
+
+| 维度 | 旧设计 | 新设计 |
+|------|--------|--------|
+| 色彩 | 冷蓝黑 + 紫色渐变 | 暖调暗色 + 珊瑚色 `#d4764e` |
+| 字体 | 系统默认 | Space Grotesk（标题）+ DM Sans（正文） |
+| 气泡 | 紫色渐变用户 + 白色 AI | 珊瑚色用户 + 暗色半透明 AI |
+| 氛围 | 冷冰冰工具感 | 温馨夜间聊天空间 |
+| 装饰 | 过度玻璃拟态 + 多层阴影 | 聊天区顶部微妙暖光晕 |
+| 模态框 | 白色背景 | 统一暗色背景 |
+| 动效 | 脉冲动画 | 克制闪烁光标 + 柔和淡入 |
+
+### 色板体系
+
+```
+背景层级: #0d0c0e → #161518 → #1e1c21 → #252329
+前景层级: #e8e2d9 → #a09a92 → #6b665f
+主色调:   #d4764e → #e08a64 (珊瑚色)
+辅助色:   #7c6faa (淡紫，仅预览标记)
+边框:     rgba(255,255,255, 0.06~0.12)
+```
+
+### 当前状态
+
+| 功能 | 状态 |
+|------|------|
+| 视口 + 安全区域适配 | ✅ |
+| 抽屉式侧边栏 | ✅ |
+| 聊天区移动端适配 | ✅ |
+| 输入框自适应高度 | ✅ |
+| 模态框全屏适配 | ✅ |
+| 触摸交互优化 | ✅ |
+| UI 暗色主题重设计 | ✅ |
+
+---
+
+## 2026-06-09 H5 完善：交互增强 + 样式补全
+
+### 变更内容
+
+| 变更项 | 说明 | 状态 |
+|--------|------|------|
+| 停止生成按钮 | 流式输出时可中断，AbortController 取消请求 | ✅ |
+| 消息时间戳 | 每条消息显示发送时间（hover 显示） | ✅ |
+| Toast 通知样式 | 补全 Toast 组件的 CSS（成功/错误/信息三种类型） | ✅ |
+| 空状态提示样式 | 补全 `.empty-hint` CSS | ✅ |
+| AI 头像 + 消息布局重构 | 消息气泡改为 flex 布局，AI 消息带头像 | ✅ |
+| 流式状态指示器 | Header 中显示脉冲圆点表示正在生成 | ✅ |
+| 编辑角色模态框 | 删除按钮样式优化，红色危险风格 | ✅ |
+| 导入模态框 radio 样式 | 补全 `.import-radio` / `.import-radio-label` CSS | ✅ |
+| 项目规则文件 | 新增 `.trae/rules/project_rules.md` | ✅ |
+
+### 停止生成按钮实现
+
+- `AppContext` 新增 `STOP_STREAM` action 和 `stopStreaming()` 方法
+- `stopStreaming()` 调用 `AbortController.abort()` 取消 SSE 请求
+- 如果 AI 回复为空则移除该消息气泡，否则保留已有内容并标记 `isStreaming: false`
+- `InputArea` 在 `isStreaming` 时显示红色"停止"按钮替代"发送"按钮
+
+### 消息时间戳实现
+
+- `ChatMessageItem` 类型新增 `timestamp?: number` 字段
+- `sendMessage` 时为 user 和 assistant 消息都附加 `Date.now()`
+- `MessageBubble` 新增 `formatTime()` 格式化为 `HH:mm`
+- 时间戳默认隐藏，hover 时淡入显示（`.message:hover .message-time { opacity: 1 }`）
+
+### 当前完成状态
+
+| 子项 | 状态 | 说明 |
+|------|------|------|
+| 停止生成按钮 | ✅ | AbortController + STOP_STREAM action |
+| 消息时间戳 | ✅ | hover 显示，HH:mm 格式 |
+| Toast CSS | ✅ | 三种类型 + 滑入动画 |
+| 空状态提示 CSS | ✅ | 居中灰色小字 |
+| AI 头像布局 | ✅ | flex + avatar-ai 圆角方块 |
+| 流式指示器 | ✅ | Header 脉冲圆点 |
+| 编辑角色删除按钮 | ✅ | 红色危险风格 |
+| 导入模态框 radio | ✅ | accent-color + label 样式 |
+| 项目规则 | ✅ | .trae/rules/project_rules.md |
+
+---
+
+## 2026-06-09 功能更新：亮色/暗色主题切换
+
+### 变更内容
+
+| 变更项 | 说明 | 状态 |
+|--------|------|------|
+| useTheme Hook | 管理主题状态，localStorage 持久化，系统偏好检测 | ✅ |
+| 亮色主题 CSS 变量 | `[data-theme="light"]` 定义完整亮色变量体系 | ✅ |
+| 主题切换按钮 | ChatHeader 右侧太阳/月亮图标按钮 | ✅ |
+| 硬编码颜色替换 | header/input bar/modal overlay 背景改用 CSS 变量 | ✅ |
+| 亮色语义色适配 | Toast/错误/警告/停止按钮等亮色下使用更深的实色 | ✅ |
+| FOUC 防闪烁 | index.html 内联脚本在渲染前设置 data-theme | ✅ |
+| theme-color 联动 | 切换主题同步更新 `<meta name="theme-color">` | ✅ |
+| 欢迎页文字不可选中 | `.welcome-state` 添加 `user-select: none` | ✅ |
+| 输入区外层不可选中 | `#input-area` 添加 `user-select: none`，textarea 内部仍可选中 | ✅ |
+
+### 当前完成状态
+
+| 子项 | 状态 | 说明 |
+|------|------|------|
+| 暗色主题 | ✅ | 默认主题，保持原有暖调暗色 |
+| 亮色主题 | ✅ | 暖白底 + 深色文字 + 同系珊瑚色 |
+| 主题持久化 | ✅ | localStorage `companion-theme` |
+| 系统偏好检测 | ✅ | `prefers-color-scheme: light` |
+| 切换按钮 | ✅ | ChatHeader 右侧，SVG 太阳/月亮图标 |
+| 语义色适配 | ✅ | 错误/成功/警告/停止按钮在亮色下使用实色 |
+| FOUC 防护 | ✅ | 内联脚本 + meta theme-color |
+| 移动端适配 | ✅ | 按钮触摸友好 36px |
+
+---
+
+## 2026-06-09 功能确认：Docker 部署
+
+> Docker 部署功能在 2026-06-06 已完成，此处为确认记录和文档补充。
+
+### 架构概览
+
+```
+┌─────────────────────────────────────────────────┐
+│              Docker Compose 编排                  │
+│                                                   │
+│  ┌──────────┐  ┌──────────┐  ┌──────────────┐   │
+│  │ postgres │  │embedding │  │    api        │   │
+│  │ pgvector │  │ Python   │  │ NestJS+Web   │   │
+│  │ :5432    │  │ :8000    │  │ :3000        │   │
+│  └────┬─────┘  └────┬─────┘  └──────┬───────┘   │
+│       │              │               │            │
+│       └──────────────┴───────────────┘            │
+│            Docker 内部网络                         │
+└─────────────────────────────────────────────────┘
+```
+
+### 服务清单
+
+| 服务 | 镜像 | 端口 | 说明 |
+|------|------|------|------|
+| `postgres` | `pgvector/pgvector:pg16` | 54321→5432 | PostgreSQL + pgvector 扩展 |
+| `embedding` | 自建 (`python/Dockerfile`) | 8000→8000 | Python FastAPI embedding 服务 |
+| `api` | 自建 (`Dockerfile`) | 3000→3000 | NestJS API + 静态 Web 前端 |
+
+### 文件清单
+
+| 文件 | 说明 |
+|------|------|
+| `Dockerfile` | 多阶段构建：安装依赖 → 编译 Web → 编译 API → 运行时镜像 |
+| `python/Dockerfile` | Python 运行时：uv 安装依赖 → 运行 uvicorn |
+| `docker-compose.yml` | 三服务编排 + 健康检查 + 依赖关系 |
+| `.env.docker.example` | 环境变量模板 |
+| `.dockerignore` | 排除 node_modules/dist/模型等 |
+| `python/.dockerignore` | 排除 .venv/模型等 |
+| `docs/Docker_Deployment.md` | 部署指南 |
+
+### 关键设计
+
+| 设计点 | 说明 |
+|--------|------|
+| 多阶段构建 | 4 阶段：api-deps → web-deps → builder → runtime，最终镜像不含编译工具 |
+| 模型外挂 | ONNX 模型通过 volume 挂载，不打入镜像（文件 ~400MB） |
+| 健康检查 | postgres 用 `pg_isready`，embedding 用 HTTP `/health` |
+| 服务发现 | Docker 内部网络，API 通过服务名 `postgres:5432` 和 `http://embedding:8000` 访问 |
+| 数据持久化 | `postgres_data` 命名卷，`down` 不删除，`down -v` 才删除 |
+| 依赖顺序 | `api` 依赖 `postgres` 和 `embedding` 健康后才启动 |
+
+### 当前完成状态
+
+| 子项 | 状态 | 说明 |
+|------|------|------|
+| API Dockerfile | ✅ | 多阶段构建，最终镜像仅含运行时 |
+| Embedding Dockerfile | ✅ | uv + uvicorn，模型外挂 |
+| docker-compose.yml | ✅ | 三服务编排 + 健康检查 |
+| 环境变量模板 | ✅ | .env.docker.example |
+| .dockerignore | ✅ | 根目录 + python 目录 |
+| 部署文档 | ✅ | docs/Docker_Deployment.md |
+| Mock Embedding 模式 | ✅ | 无模型时可快速联调 |

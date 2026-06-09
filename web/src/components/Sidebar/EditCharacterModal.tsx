@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useAppContext } from '../../context/AppContext';
+import { useToast } from '../Toast';
 import type { CharacterData } from '@shared/types';
 
 interface EditCharacterModalProps {
@@ -12,6 +13,7 @@ export default function EditCharacterModal({
   onClose,
 }: EditCharacterModalProps) {
   const { updateCharacter, deleteCharacter } = useAppContext();
+  const { toast } = useToast();
   const [name, setName] = useState(character.name);
   const [basePrompt, setBasePrompt] = useState(character.basePrompt);
   const [saving, setSaving] = useState(false);
@@ -20,9 +22,10 @@ export default function EditCharacterModal({
     setSaving(true);
     try {
       await updateCharacter(character.id, name.trim(), basePrompt.trim());
+      toast('角色已保存', 'success');
       onClose();
     } catch (err) {
-      alert('保存失败: ' + (err as Error).message);
+      toast('保存失败: ' + (err as Error).message, 'error');
     } finally {
       setSaving(false);
     }
@@ -32,16 +35,17 @@ export default function EditCharacterModal({
     if (!confirm(`确定删除角色「${character.name}」及其所有会话？`)) return;
     try {
       await deleteCharacter(character.id);
+      toast('角色已删除', 'success');
       onClose();
     } catch (err) {
-      alert('删除失败: ' + (err as Error).message);
+      toast('删除失败: ' + (err as Error).message, 'error');
     }
   };
 
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
-        <h3>编辑角色: {character.id}</h3>
+        <h3>编辑角色: {character.name}</h3>
 
         <label>名称</label>
         <input value={name} onChange={(e) => setName(e.target.value)} />
@@ -53,7 +57,7 @@ export default function EditCharacterModal({
         />
 
         <div className="modal-actions">
-          <button className="btn-cancel" onClick={handleDelete}>
+          <button className="btn-danger" onClick={handleDelete}>
             删除
           </button>
           <button className="btn-cancel" onClick={onClose}>

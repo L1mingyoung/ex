@@ -162,4 +162,5 @@ export interface ChatMessageItem {
   role: MessageRole;
   content: string;
   isStreaming?: boolean;
+  timestamp?: number;
 }

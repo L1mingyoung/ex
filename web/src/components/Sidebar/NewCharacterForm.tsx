@@ -1,8 +1,10 @@
 import { useState } from 'react';
 import { useAppContext } from '../../context/AppContext';
+import { useToast } from '../Toast';
 
 export default function NewCharacterForm() {
   const { createCharacter } = useAppContext();
+  const { toast } = useToast();
   const [id, setId] = useState('');
   const [name, setName] = useState('');
   const [prompt, setPrompt] = useState('');
@@ -19,8 +21,9 @@ export default function NewCharacterForm() {
       setId('');
       setName('');
       setPrompt('');
+      toast('角色创建成功', 'success');
     } catch (err) {
-      alert('创建角色失败: ' + (err as Error).message);
+      toast('创建角色失败: ' + (err as Error).message, 'error');
     }
   };
 

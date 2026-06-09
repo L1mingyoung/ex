@@ -5,8 +5,8 @@
  * 组件通过 useAppContext() hook 读取状态和调用操作。
  */
 
-import React, { createContext, useContext, useReducer, useRef, useCallback } from 'react';
-import type { CharacterData, SessionData, StatusType, ChatMessageItem, MessageRole } from '@shared/types';
+import type { CharacterData, ChatMessageItem, MessageRole, SessionData, StatusType } from '@shared/types';
+import React, { createContext, useCallback, useContext, useReducer, useRef } from 'react';
 import * as API from '../api/index';
 
 // ═══════════════════════════════════════
@@ -52,13 +52,14 @@ type Action =
   | { type: 'SELECT_CHARACTER'; payload: string }
   | { type: 'SELECT_SESSION'; payload: string }
   | { type: 'SET_MESSAGES'; payload: ChatMessageItem[] }
-  | { type: 'ADD_MESSAGE'; payload: { role: MessageRole; content: string; isStreaming?: boolean } }
+  | { type: 'ADD_MESSAGE'; payload: { role: MessageRole; content: string; isStreaming?: boolean; timestamp?: number } }
   | { type: 'APPEND_CHUNK'; payload: string }
   | { type: 'FINISH_STREAM' }
   | { type: 'STREAM_ERROR'; payload: string }
   | { type: 'SET_STATUS'; payload: { type: StatusType; message?: string } }
   | { type: 'CLEAR_MESSAGES' }
-  | { type: 'REMOVE_SESSION'; payload: string };
+  | { type: 'REMOVE_SESSION'; payload: string }
+  | { type: 'STOP_STREAM' };
 
 function reducer(state: AppState, action: Action): AppState {
   switch (action.type) {
@@ -165,6 +166,25 @@ function reducer(state: AppState, action: Action): AppState {
       };
     }
 
+    case 'STOP_STREAM': {
+      const msgs = [...state.messages];
+      const last = msgs[msgs.length - 1];
+      if (last && last.role === 'assistant' && last.isStreaming) {
+        if (!last.content.trim()) {
+          msgs.pop();
+        } else {
+          msgs[msgs.length - 1] = { ...last, isStreaming: false };
+        }
+      }
+      return {
+        ...state,
+        messages: msgs,
+        isStreaming: false,
+        statusType: 'online',
+        statusMessage: '在线',
+      };
+    }
+
     default:
       return state;
   }
@@ -189,6 +209,7 @@ interface AppContextValue {
   createSession: () => Promise<void>;
   deleteSession: (id: string) => Promise<void>;
   sendMessage: (content: string) => Promise<void>;
+  stopStreaming: () => void;
 }
 
 const AppContext = createContext<AppContextValue | null>(null);
@@ -314,13 +335,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       // 添加用户消息
       dispatch({
         type: 'ADD_MESSAGE',
-        payload: { role: 'user', content },
+        payload: { role: 'user', content, timestamp: Date.now() },
       });
 
-      // 添加空的 AI 消息气泡（流式填充）
       dispatch({
         type: 'ADD_MESSAGE',
-        payload: { role: 'assistant', content: '', isStreaming: true },
+        payload: { role: 'assistant', content: '', isStreaming: true, timestamp: Date.now() },
       });
 
       dispatch({
@@ -349,6 +369,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     [state.currentSessionId, state.isStreaming],
   );
 
+  const stopStreamingFn = useCallback(() => {
+    if (abortRef.current) {
+      abortRef.current.abort();
+      abortRef.current = null;
+    }
+    dispatch({ type: 'STOP_STREAM' });
+  }, []);
+
   // ═══════════════════════════════════════
   //  提供 context
   // ═══════════════════════════════════════
@@ -367,6 +395,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     createSession: createSessionFn,
     deleteSession: deleteSessionFn,
     sendMessage: sendMessageFn,
+    stopStreaming: stopStreamingFn,
   };
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>;
