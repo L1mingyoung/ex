@@ -30,3 +30,6 @@ pgdata/
 exports/
 .env.docker
 postgres_data/
+
+# QQ Bot 状态文件
+adapters/qq-bot/.qq-bot-state.json

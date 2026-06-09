@@ -54,18 +54,18 @@ Cloudflare Tunnel / 直接访问
 
 ## 二、技术栈清单
 
-| 层级 | 技术 | 用途 | 安装方式 |
-|------|------|------|----------|
-| 运行时 | Node.js 18+ | 主 API 服务 | 官网下载 |
-| 运行时 | Python 3.10+ | 向量服务 | 官网下载 |
-| 主框架 | Express 4.x | HTTP API | `npm i express` |
-| 数据库驱动 | better-sqlite3 | SQLite 同步操作 | `npm i better-sqlite3` |
-| 向量服务 | FastAPI | Python API | `pip install fastapi uvicorn` |
-| 向量数据库 | ChromaDB | 存储/检索向量 | `pip install chromadb` |
-| 推理引擎 | ONNX Runtime | 本地 Embedding | `pip install onnxruntime` |
-| 模型 | Jina v2 base zh | 文本转 768 维向量 | 下载 `.onnx` 文件 |
-| LLM | DeepSeek API | 对话/摘要/提取 | 官网申请 Key |
-| 进程管理 | PM2 | Node 进程守护 | `npm i -g pm2` |
+| 层级       | 技术            | 用途              | 安装方式                      |
+| ---------- | --------------- | ----------------- | ----------------------------- |
+| 运行时     | Node.js 18+     | 主 API 服务       | 官网下载                      |
+| 运行时     | Python 3.10+    | 向量服务          | 官网下载                      |
+| 主框架     | Express 4.x     | HTTP API          | `npm i express`               |
+| 数据库驱动 | better-sqlite3  | SQLite 同步操作   | `npm i better-sqlite3`        |
+| 向量服务   | FastAPI         | Python API        | `pip install fastapi uvicorn` |
+| 向量数据库 | ChromaDB        | 存储/检索向量     | `pip install chromadb`        |
+| 推理引擎   | ONNX Runtime    | 本地 Embedding    | `pip install onnxruntime`     |
+| 模型       | Jina v2 base zh | 文本转 768 维向量 | 下载 `.onnx` 文件             |
+| LLM        | DeepSeek API    | 对话/摘要/提取    | 官网申请 Key                  |
+| 进程管理   | PM2             | Node 进程守护     | `npm i -g pm2`                |
 
 ---
 
@@ -253,7 +253,7 @@ LLM 返回：
 
 聊天
   POST   /api/chat                发消息（SSE 流式返回）
-  
+
 向量服务（Python FastAPI，内部调用，不暴露外网）
   POST   /embed                   单条文本向量化
   POST   /batch_embed             批量向量化
@@ -308,24 +308,26 @@ companion-backend/
 
 ```javascript
 function buildPrompt(character, summary, memories, recentMessages) {
-    const parts = [
-        // 第一层：固定人格
-        character.base_prompt,
-        
-        // 第二层：滚动摘要
-        summary ? `【你们之前的对话摘要】\n${summary}` : '',
-        
-        // 第三层：动态记忆
-        memories.length ? `【关于用户的记忆】\n${memories.map(m => `- ${m}`).join('\n')}` : '',
-        
-        // 限制
-        `请记住以上信息，用符合你性格的方式回复。`
-    ];
-    
-    return {
-        system: parts.filter(Boolean).join('\n\n'),
-        messages: recentMessages  // 最近 10 条
-    };
+  const parts = [
+    // 第一层：固定人格
+    character.base_prompt,
+
+    // 第二层：滚动摘要
+    summary ? `【你们之前的对话摘要】\n${summary}` : '',
+
+    // 第三层：动态记忆
+    memories.length
+      ? `【关于用户的记忆】\n${memories.map((m) => `- ${m}`).join('\n')}`
+      : '',
+
+    // 限制
+    `请记住以上信息，用符合你性格的方式回复。`,
+  ];
+
+  return {
+    system: parts.filter(Boolean).join('\n\n'),
+    messages: recentMessages, // 最近 10 条
+  };
 }
 ```
 
@@ -368,7 +370,7 @@ def search(query: str, top_k: int = 5):
 async function handleChat(req, res) {
     // ... 生成回复 ...
     res.json({ reply: assistantContent });
-    
+
     // 异步提取（不阻塞）
     setImmediate(() => {
         extractMemory(sessionId, userContent, assistantContent);
@@ -380,16 +382,16 @@ async function extractMemory(sessionId, userMsg, assistantMsg) {
 用户：${userMsg}
 AI：${assistantMsg}
 输出格式：每行一个，[类型] 内容`;
-    
+
     const result = await callLLM(prompt);  // 调 DeepSeek
     const memories = parseMemories(result);
-    
+
     for (const mem of memories) {
         // 写入 SQLite
         const fragmentId = db.prepare(
             'INSERT INTO memory_fragments ...'
         ).run(...).lastInsertRowid;
-        
+
         // 向量化 + 存入 ChromaDB
         await vectorService.addMemory(fragmentId, mem.content, sessionId);
     }
@@ -429,15 +431,15 @@ version: '3'
 services:
   node:
     build: ./node
-    ports: ["3000:3000"]
+    ports: ['3000:3000']
     environment:
       - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY}
     volumes:
       - ./data:/app/data
-  
+
   python:
     build: ./python
-    ports: ["8000:8000"]
+    ports: ['8000:8000']
     volumes:
       - ./data:/app/data
       - ./models:/app/models
@@ -447,28 +449,28 @@ services:
 
 ## 九、实施优先级（第一周做什么）
 
-| 天数 | 任务 | 产出 |
-|------|------|------|
-| Day 1 | 初始化项目，装依赖，SQLite 建表 | `node` 和 `python` 目录能跑 |
-| Day 2 | 实现角色 CRUD + 会话 CRUD | Postman 能创建角色和会话 |
-| Day 3 | 打通 DeepSeek 对话（最简单版本） | 能对角色发消息，收到回复 |
-| Day 4 | 接入 Python 向量服务 + ChromaDB | 能存入/检索向量 |
-| Day 5 | 异步记忆提取（最简单版本） | 聊天后后台自动提取记忆 |
-| Day 6 | 滚动摘要 + Prompt 组装 | AI 能记住 50 条之前的摘要 |
-| Day 7 | 联调 + 修 bug | 完整体验一次长对话 |
+| 天数  | 任务                             | 产出                        |
+| ----- | -------------------------------- | --------------------------- |
+| Day 1 | 初始化项目，装依赖，SQLite 建表  | `node` 和 `python` 目录能跑 |
+| Day 2 | 实现角色 CRUD + 会话 CRUD        | Postman 能创建角色和会话    |
+| Day 3 | 打通 DeepSeek 对话（最简单版本） | 能对角色发消息，收到回复    |
+| Day 4 | 接入 Python 向量服务 + ChromaDB  | 能存入/检索向量             |
+| Day 5 | 异步记忆提取（最简单版本）       | 聊天后后台自动提取记忆      |
+| Day 6 | 滚动摘要 + Prompt 组装           | AI 能记住 50 条之前的摘要   |
+| Day 7 | 联调 + 修 bug                    | 完整体验一次长对话          |
 
 ---
 
 ## 十、常见坑（提前避）
 
-| 坑 | 原因 | 解决方案 |
-|----|------|----------|
-| ChromaDB Windows 路径报错 | 用户目录带中文/空格 | 显式指定 `path="D:/companion/chroma_data"` |
-| better-sqlite3 安装失败 | 缺少 Python/C++ 编译环境 | `npm install --build-from-source` 或装 windows-build-tools |
-| DeepSeek API 超时 | 生成长文本慢 | 开 SSE 流式，或调短 `max_tokens` |
-| 记忆重复提取 | "用户住在北京"被提取 5 次 | 入库前查重：新记忆和已有记忆 cosine > 0.95 则跳过 |
-| 向量检索返回不相关 | 查询太短（如"嗯"） | 短消息不做向量检索，或拼接上下文再检索 |
-| SQLite 锁库 | 异步写入并发 | 用 WAL 模式：`PRAGMA journal_mode=WAL;` |
+| 坑                        | 原因                      | 解决方案                                                   |
+| ------------------------- | ------------------------- | ---------------------------------------------------------- |
+| ChromaDB Windows 路径报错 | 用户目录带中文/空格       | 显式指定 `path="D:/companion/chroma_data"`                 |
+| better-sqlite3 安装失败   | 缺少 Python/C++ 编译环境  | `npm install --build-from-source` 或装 windows-build-tools |
+| DeepSeek API 超时         | 生成长文本慢              | 开 SSE 流式，或调短 `max_tokens`                           |
+| 记忆重复提取              | "用户住在北京"被提取 5 次 | 入库前查重：新记忆和已有记忆 cosine > 0.95 则跳过          |
+| 向量检索返回不相关        | 查询太短（如"嗯"）        | 短消息不做向量检索，或拼接上下文再检索                     |
+| SQLite 锁库               | 异步写入并发              | 用 WAL 模式：`PRAGMA journal_mode=WAL;`                    |
 
 ---
 
@@ -478,13 +480,63 @@ services:
 - [ ] jiwen 情绪引擎接入
 - [ ] 三路召回（FTS5 + 向量 + 实体聚合）
 - [ ] RRF 融合排序
-- [ ] PostgreSQL + pgvector 迁移
+- [x] QQ Bot 适配器（v2 已完成，详见 `docs/QQ_Bot_Integration.md`）
+- [ ] Telegram Bot
 - [ ] 多用户注册/登录
+- [ ] 主动消息推送（定时触发 / 事件驱动）
 - [ ] WebSocket 实时聊天界面
+- [ ] 移动端 App
 
 ---
 
-## 十二、总结：这套系统的本质
+## 十二、QQ Bot 接入（已完成 v2）
+
+### 12.1 架构
+
+```
+QQ 用户 ──→ QQ WebSocket 网关 ──→ QQ Bot 适配器 ──→ NestJS API ──→ DeepSeek
+                                    (独立进程)
+```
+
+### 12.2 已实现功能
+
+| 功能              | 说明                                                  |
+| ----------------- | ----------------------------------------------------- |
+| Access Token 鉴权 | 旧 Token 方式已废弃，改用 AppSecret 获取 Access Token |
+| Op 6 Resume       | 断线恢复，不丢消息，状态持久化到 `.qq-bot-state.json` |
+| 私聊消息          | `C2C_MESSAGE_CREATE` 事件                             |
+| 群聊消息          | `GROUP_AT_MESSAGE_CREATE` 事件                        |
+| 消息去重          | 幂等处理，防止平台重复推送                            |
+| 频率控制          | 被动回复 5 分钟内最多 2 条                            |
+| 沙箱/正式切换     | `.env` 中 `QQ_BOT_SANDBOX=1` 切换沙箱模式             |
+
+### 12.3 启动方式
+
+```bash
+# 单独启动
+npm run qqbot
+# 或
+node adapters/qq-bot/index.js
+
+# 一键启动（start.bat 自动检测 .env 中的 QQ_BOT_APP_ID）
+start.bat
+```
+
+### 12.4 待完善
+
+- [ ] 富文本消息（图片、表情、Markdown）
+- [ ] 消息队列化（进一步控制频率）
+- [ ] 主动消息推送（结合定时任务）
+- [ ] 正式环境审核通过后切换网关
+
+### 12.5 相关文档
+
+- 详细接入指南：`docs/QQ_Bot_Integration.md`
+- 适配器代码：`adapters/qq-bot/index.js`
+
+---
+
+## 十三、总结：这套系统的本质
 
 ```
 普通聊天机器人：
