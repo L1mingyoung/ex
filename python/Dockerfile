@@ -13,7 +13,7 @@ ENV UV_HTTP_TIMEOUT=120
 ENV UV_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple/
 
 COPY pyproject.toml uv.lock ./
-RUN uv sync --frozen --no-dev
+RUN uv sync --no-dev
 
 COPY main.py embedder.py ./
 RUN mkdir -p /app/models
