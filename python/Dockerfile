@@ -8,6 +8,10 @@ ENV PYTHONUNBUFFERED=1
 
 RUN pip install --no-cache-dir uv
 
+# 国内镜像加速 + 超时设置
+ENV UV_HTTP_TIMEOUT=120
+ENV UV_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple/
+
 COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-dev
 
