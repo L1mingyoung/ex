@@ -57,18 +57,16 @@ docker compose version
 
 有两种方式：
 
-### 方式 A：Git 拉取（推荐，代码在 GitHub 上）
+### 方式 A：Git 拉取（推荐，代码在 Gitee 上）
 
 ```bash
 # 在服务器上安装 Git
 sudo apt install -y git
 
-# 创建项目目录
-mkdir -p /opt/companion
-cd /opt/companion
-
-# 拉取代码
-git clone https://github.com/你的用户名/companion.git .
+# 克隆代码（会自动创建 ex 目录）
+cd ~
+git clone https://gitee.com/l1anyue/ex.git
+cd ex
 ```
 
 ### 方式 B：从本地上传（scp）
@@ -76,19 +74,16 @@ git clone https://github.com/你的用户名/companion.git .
 在你的 **Windows 本地** 新开一个终端（不是 SSH 窗口），执行：
 
 ```bash
-scp -r D:\Code\AI\companion root@62.234.150.98:/opt/companion
-```
+# 先打包（排除不需要的目录）
+cd d:\Code\AI\companion
+tar -czf companion.tar.gz --exclude=node_modules --exclude=.venv --exclude=dist --exclude=.env --exclude=pgdata --exclude=postgres_data .
 
-> scp 会自动排除 `node_modules` 等（它们在 `.gitignore` 里，但 scp 不会看 gitignore）。
-> 如果不想传 node_modules，可以先压缩再传：
->
-> ```bash
-> # Windows PowerShell（排除不需要的目录）
-> tar -czf companion.tar.gz --exclude=node_modules --exclude=.venv --exclude=dist companion
-> scp companion.tar.gz root@62.234.150.98:/opt/
-> # 服务器上解压
-> ssh root@62.234.150.98 "cd /opt && tar -xzf companion.tar.gz && mv companion companion-app"
-> ```
+# 上传到服务器
+scp companion.tar.gz ubuntu@62.234.150.98:~/ex/
+
+# 然后 SSH 到服务器解压
+ssh ubuntu@62.234.150.98 "mkdir -p ~/ex && cd ~/ex && tar -xzf companion.tar.gz"
+```
 
 ---
 
@@ -113,14 +108,14 @@ MOCK_EMBEDDING=1
 在 Windows 本地执行（另开终端）：
 
 ```bash
-scp D:\Code\AI\companion\python\models\jina-embeddings-v2-base-zh.onnx root@62.234.150.98:/opt/companion/python/models/
-scp D:\Code\AI\companion\python\models\tokenizer.json root@62.234.150.98:/opt/companion/python/models/
+scp D:\Code\AI\companion\python\models\jina-embeddings-v2-base-zh.onnx ubuntu@62.234.150.98:~/ex/python/models/
+scp D:\Code\AI\companion\python\models\tokenizer.json ubuntu@62.234.150.98:~/ex/python/models/
 ```
 
 或者在服务器上用下载脚本：
 
 ```bash
-cd /opt/companion/python
+cd ~/ex/python
 python3 scripts/download_model.py
 ```
 
@@ -129,7 +124,7 @@ python3 scripts/download_model.py
 ## 第四步：创建 .env 配置文件
 
 ```bash
-cd /opt/companion
+cd ~/ex
 
 # 用 nano 编辑器创建配置文件
 nano .env
@@ -171,7 +166,7 @@ QQ_CHARACTER_ID=test1
 ## 第五步：Docker Compose 一键启动
 
 ```bash
-cd /opt/companion
+cd ~/ex
 
 # 构建并启动所有服务（后台运行）
 docker compose up -d --build
@@ -283,7 +278,7 @@ QQ Bot 已集成到 Docker Compose，使用 `profiles` 按需启动。
 ### 方式 A：Docker 启动（推荐）
 
 ```bash
-cd /opt/companion
+cd ~/ex
 
 # 启动所有服务 + QQ Bot
 docker compose --profile qqbot up -d
@@ -307,7 +302,7 @@ curl -fsSL https://deb.nodesource.com/setup_24.x | sudo -E bash -
 sudo apt install -y nodejs
 
 # 安装依赖
-cd /opt/companion
+cd ~/ex
 npm install ws dotenv
 
 # 安装 PM2
@@ -343,7 +338,7 @@ QQ Bot 的 PM2 在上一步已设置 `pm2 startup` + `pm2 save`。
 ### Docker Compose
 
 ```bash
-cd /opt/companion
+cd ~/ex
 
 # 查看所有容器状态
 docker compose ps
@@ -420,7 +415,7 @@ cat backup.sql | docker exec -i companion-postgres psql -U postgres -d companion
 ## 更新代码后的重新部署
 
 ```bash
-cd /opt/companion
+cd ~/ex
 
 # 拉取最新代码
 git pull
@@ -492,7 +487,7 @@ docker compose up -d --build embedding
 ## 部署完成后的文件结构
 
 ```
-/opt/companion/
+~/ex/
 ├── .env                    ← 你的配置文件（不在 Git 里）
 ├── docker-compose.yml
 ├── Dockerfile

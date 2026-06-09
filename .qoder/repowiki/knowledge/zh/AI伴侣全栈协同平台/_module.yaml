@@ -4,6 +4,7 @@ title: AI伴侣全栈协同平台
 scope:
     - .dockerignore
     - .env
+    - .env.docker
     - .env.docker.example
     - .env.example
     - .gitignore
@@ -12,13 +13,13 @@ scope:
     - .qoder\repowiki\knowledge\zh\AI 伴侣聊天前端应用\技术栈.md
     - .qoder\repowiki\knowledge\zh\AI 伴侣聊天前端应用\架构设计.md
     - .qoder\repowiki\knowledge\zh\AI 伴侣聊天前端应用\概述.md
+    - .qoder\repowiki\knowledge\zh\AI 伴侣聊天前端应用\特殊配置与命令.md
     - .qoder\repowiki\knowledge\zh\AI 伴侣聊天前端应用\编码规范.md
     - .qoder\repowiki\knowledge\zh\AI伴侣全栈协同平台\_module.yaml
     - .qoder\repowiki\knowledge\zh\AI伴侣全栈协同平台\技术栈.md
     - .qoder\repowiki\knowledge\zh\AI伴侣全栈协同平台\架构设计.md
     - .qoder\repowiki\knowledge\zh\AI伴侣全栈协同平台\概述.md
     - .qoder\repowiki\knowledge\zh\AI伴侣全栈协同平台\特殊配置与命令.md
-    - .qoder\repowiki\knowledge\zh\AI伴侣全栈协同平台\编码规范.md
     - .qoder\repowiki\knowledge\zh\AI伴侣后端服务\_module.yaml
     - .qoder\repowiki\knowledge\zh\AI伴侣后端服务\应用启动与核心配置\_module.yaml
     - .qoder\repowiki\knowledge\zh\AI伴侣后端服务\应用启动与核心配置\技术栈.md
@@ -47,9 +48,12 @@ scope:
     - .qoder\repowiki\zh\content\API接口文档\聊天接口.md
     - .qoder\repowiki\zh\content\API接口文档\角色管理接口.md
     - .qoder\repowiki\zh\content\前端应用详解\React应用架构.md
+    - .qoder\repowiki\zh\content\前端应用详解\Toast通知系统.md
     - .qoder\repowiki\zh\content\前端应用详解\上下文状态管理.md
+    - .qoder\repowiki\zh\content\前端应用详解\主题切换系统.md
     - .qoder\repowiki\zh\content\前端应用详解\侧边栏系统.md
     - .qoder\repowiki\zh\content\前端应用详解\前端应用详解.md
+    - .qoder\repowiki\zh\content\前端应用详解\移动端响应式设计.md
     - .qoder\repowiki\zh\content\前端应用详解\聊天界面组件.md
     - .qoder\repowiki\zh\content\后端服务详解\LLM推理服务.md
     - .qoder\repowiki\zh\content\后端服务详解\会话管理模块.md
@@ -128,12 +132,15 @@ scope:
     - docs\AI_Companion_NestJS.md
     - docs\AI_Companion_Roadmap.md
     - docs\AI_Companion_最终方案.md
+    - docs\Deployment_Guide.md
     - docs\Docker_Deployment.md
     - docs\Implementation_Plan.md
     - docs\Learning_Notes.md
     - docs\Project_Rules.md
+    - docs\QQ_Bot_Integration.md
     - eslint.config.mjs
     - nest-cli.json
+    - nul
     - package-lock.json
     - package.json
     - python\.dockerignore
