@@ -1,5 +1,8 @@
-// 加载根目录的 .env
-require('dotenv').config({ path: require('path').join(__dirname, '..', '..', '.env') });
+// 加载 .env（本地开发用，Docker 中通过环境变量传入，无需 .env 文件）
+const dotenvPath = require('path').join(__dirname, '..', '..', '.env');
+if (require('fs').existsSync(dotenvPath)) {
+    require('dotenv').config({ path: dotenvPath });
+}
 
 /**
  * QQ Bot 适配器 v2 — 连接 QQ 到 AI Companion

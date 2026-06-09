@@ -4,6 +4,9 @@ python/.venv/
 
 # 环境变量（含密码/密钥）
 .env
+.env.*
+!.env.example
+!.env.docker.example
 
 # 编译产物
 dist/
@@ -22,13 +25,13 @@ python/models/*.onnx
 # OS
 Thumbs.db
 .DS_Store
+nul
 
 # Docker
 pgdata/
 
 # Local exported chat records
 exports/
-.env.docker
 postgres_data/
 
 # QQ Bot 状态文件

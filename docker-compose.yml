@@ -7,11 +7,15 @@ services:
       POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
       POSTGRES_DB: ${DB_NAME:-companion}
     ports:
-      - "${DB_PORT:-54321}:5432"
+      - '${DB_PORT:-54321}:5432'
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres} -d ${DB_NAME:-companion}"]
+      test:
+        [
+          'CMD-SHELL',
+          'pg_isready -U ${DB_USER:-postgres} -d ${DB_NAME:-companion}',
+        ]
       interval: 5s
       timeout: 5s
       retries: 20
@@ -25,11 +29,17 @@ services:
       EMBEDDING_MODEL_PATH: ${EMBEDDING_MODEL_PATH:-/app/models/jina-embeddings-v2-base-zh.onnx}
       EMBEDDING_TOKENIZER_PATH: ${EMBEDDING_TOKENIZER_PATH:-/app/models/tokenizer.json}
     ports:
-      - "${EMBEDDING_PORT:-8000}:8000"
+      - '${EMBEDDING_PORT:-8000}:8000'
     volumes:
       - ./python/models:/app/models:ro
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)"]
+      test:
+        [
+          'CMD',
+          'python',
+          '-c',
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)",
+        ]
       interval: 10s
       timeout: 5s
       retries: 20
@@ -50,7 +60,7 @@ services:
       DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY}
       PYTHON_EMBED_URL: http://embedding:8000
     ports:
-      - "${PORT:-3000}:3000"
+      - '${PORT:-3000}:3000'
     depends_on:
       postgres:
         condition: service_healthy
@@ -58,5 +68,28 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  qqbot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: companion-qqbot
+    working_dir: /app
+    command: ['node', 'adapters/qq-bot/index.js']
+    environment:
+      QQ_BOT_APP_ID: ${QQ_BOT_APP_ID:-}
+      QQ_BOT_APP_SECRET: ${QQ_BOT_APP_SECRET:-}
+      QQ_BOT_SANDBOX: ${QQ_BOT_SANDBOX:-0}
+      QQ_CHARACTER_ID: ${QQ_CHARACTER_ID:-xiaoya}
+      API_BASE: http://api:3000
+    volumes:
+      - qqbot_state:/app/adapters/qq-bot
+    depends_on:
+      api:
+        condition: service_started
+    restart: unless-stopped
+    profiles:
+      - qqbot
+
 volumes:
   postgres_data:
+  qqbot_state:
