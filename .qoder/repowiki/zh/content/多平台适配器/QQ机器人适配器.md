@@ -4,12 +4,18 @@
 **本文引用的文件**
 - [adapter.js](file://adapters/qq-bot/adapter.js)
 - [index.js](file://adapters/qq-bot/index.js)
-- [.env 示例](file://.env)
 - [sessions.controller.ts](file://src/sessions/sessions.controller.ts)
 - [messages.controller.ts](file://src/messages/messages.controller.ts)
 - [types.ts](file://shared/types.ts)
 - [index.ts（Web API 封装）](file://web/src/api/index.ts)
 </cite>
+
+## 更新摘要
+**变更内容**
+- 更新了基于应用变更：QQ机器人适配器代码重构和格式化，改善了代码结构和配置加载
+- 优化了配置模块的组织结构和环境变量处理方式
+- 改进了代码注释和模块化设计
+- 增强了错误处理和日志记录机制
 
 ## 目录
 1. [简介](#简介)
@@ -24,7 +30,9 @@
 10. [附录](#附录)
 
 ## 简介
-本文件面向“QQ机器人适配器”的技术实现，聚焦于消息处理机制、WebSocket事件监听、消息解析与响应生成、连接管理与心跳、断线重连、配置与安全、错误处理与日志、性能优化与并发、以及与后端服务的数据同步与一致性保障。文档同时阐明 adapter.js 与 index.js 的职责分工与协作关系，并给出针对 QQ 机器人特有消息类型的处理建议。
+本文件面向"QQ机器人适配器"的技术实现，聚焦于消息处理机制、WebSocket事件监听、消息解析与响应生成、连接管理与心跳、断线重连、配置与安全、错误处理与日志、性能优化与并发、以及与后端服务的数据同步与一致性保障。文档同时阐明 adapter.js 与 index.js 的职责分工与协作关系，并给出针对 QQ 机器人特有消息类型的处理建议。
+
+**更新** 本次更新重点关注代码重构后的结构优化和配置加载改进。
 
 ## 项目结构
 QQ 机器人适配器位于 adapters/qq-bot 目录，核心文件为：
@@ -54,15 +62,15 @@ WEB_API --> |"HTTP请求"| MSG_CTRL
 ADP -. "示意SDK集成" .- IDX
 ```
 
-图表来源
+**图表来源**
 - [index.js:1-303](file://adapters/qq-bot/index.js#L1-L303)
 - [adapter.js:1-35](file://adapters/qq-bot/adapter.js#L1-L35)
-- [sessions.controller.ts:1-27](file://src/sessions/sessions.controller.ts#L1-L27)
-- [messages.controller.ts:1-26](file://src/messages/messages.controller.ts#L1-L26)
+- [sessions.controller.ts:1-28](file://src/sessions/sessions.controller.ts#L1-L28)
+- [messages.controller.ts:1-27](file://src/messages/messages.controller.ts#L1-L27)
 - [types.ts:60-86](file://shared/types.ts#L60-L86)
 - [index.ts（Web API 封装）:87-112](file://web/src/api/index.ts#L87-L112)
 
-章节来源
+**章节来源**
 - [index.js:1-303](file://adapters/qq-bot/index.js#L1-L303)
 - [adapter.js:1-35](file://adapters/qq-bot/adapter.js#L1-L35)
 
@@ -74,7 +82,9 @@ ADP -. "示意SDK集成" .- IDX
 - 消息处理：解析事件负载，过滤自身消息，调用 AI 服务并回发到 QQ
 - 心跳与重连：根据 Hello 帧中的心跳间隔启动定时心跳，断线后延迟重连
 
-章节来源
+**更新** 配置模块经过重构，使用更清晰的结构和环境变量处理方式。
+
+**章节来源**
 - [index.js:27-37](file://adapters/qq-bot/index.js#L27-L37)
 - [index.js:74](file://adapters/qq-bot/index.js#L74)
 - [index.js:80-104](file://adapters/qq-bot/index.js#L80-L104)
@@ -85,7 +95,7 @@ ADP -. "示意SDK集成" .- IDX
 - [index.js:228-258](file://adapters/qq-bot/index.js#L228-L258)
 
 ## 架构总览
-QQ 机器人适配器采用“WebSocket + HTTP”双通道架构：
+QQ 机器人适配器采用"WebSocket + HTTP"双通道架构：
 - WebSocket：接收来自 QQ 的实时事件（如私聊消息、群内@消息）
 - HTTP：与 NestJS 后端交互，完成会话管理与对话问答
 - 适配器负责事件解析、会话映射、AI 调用与回复发送
@@ -107,7 +117,7 @@ WS->>Q : "发送消息(带msg_id)"
 Note over WS,Q : "心跳与断线重连由适配器管理"
 ```
 
-图表来源
+**图表来源**
 - [index.js:141-186](file://adapters/qq-bot/index.js#L141-L186)
 - [index.js:107-124](file://adapters/qq-bot/index.js#L107-L124)
 - [index.js:228-258](file://adapters/qq-bot/index.js#L228-L258)
@@ -117,8 +127,10 @@ Note over WS,Q : "心跳与断线重连由适配器管理"
 ## 详细组件分析
 
 ### adapter.js 与 index.js 的职责分工与协作
-- adapter.js：作为“占位与示意”，展示如何通过官方 SDK 订阅事件、调用后端 API、向用户发送消息。其核心价值在于明确 SDK 集成路径与期望的事件回调形态。
+- adapter.js：作为"占位与示意"，展示如何通过官方 SDK 订阅事件、调用后端 API、向用户发送消息。其核心价值在于明确 SDK 集成路径与期望的事件回调形态。
 - index.js：实际实现，包含完整的配置、鉴权、WebSocket 生命周期、事件分发、HTTP 请求、会话映射、心跳与重连等逻辑。两者协同目标一致：将 QQ 用户消息转换为后端可理解的会话与内容，并将后端回复转回 QQ。
+
+**更新** 代码重构后，adapter.js 的结构更加清晰，注释更加详细。
 
 ```mermaid
 flowchart TD
@@ -130,13 +142,13 @@ B --> F["心跳与断线重连"]
 C --> G["消息处理与回复"]
 ```
 
-图表来源
+**图表来源**
 - [adapter.js:1-35](file://adapters/qq-bot/adapter.js#L1-L35)
 - [index.js:133-197](file://adapters/qq-bot/index.js#L133-L197)
 - [index.js:107-124](file://adapters/qq-bot/index.js#L107-L124)
 - [index.js:199-204](file://adapters/qq-bot/index.js#L199-L204)
 
-章节来源
+**章节来源**
 - [adapter.js:1-35](file://adapters/qq-bot/adapter.js#L1-L35)
 - [index.js:1-303](file://adapters/qq-bot/index.js#L1-L303)
 
@@ -146,6 +158,8 @@ C --> G["消息处理与回复"]
 - 事件过滤：仅处理 C2C_MESSAGE_CREATE（私聊消息）与 GROUP_AT_MESSAGE_CREATE（群内@消息），并忽略自身 bot_id
 - 内容解析：从 d.content、d.author.id、d.id 等字段提取必要信息
 - 响应生成：获取或创建 sessionId，调用 chat 接口获取 reply，再通过 HTTP API 回复到 QQ
+
+**更新** 代码重构后，消息处理逻辑更加清晰，错误处理更加完善。
 
 ```mermaid
 flowchart TD
@@ -165,12 +179,12 @@ Chat --> Reply["发送回复到QQ"]
 Reply --> End(["结束"])
 ```
 
-图表来源
+**图表来源**
 - [index.js:141-186](file://adapters/qq-bot/index.js#L141-L186)
 - [index.js:207-226](file://adapters/qq-bot/index.js#L207-L226)
 - [index.js:228-258](file://adapters/qq-bot/index.js#L228-L258)
 
-章节来源
+**章节来源**
 - [index.js:141-186](file://adapters/qq-bot/index.js#L141-L186)
 - [index.js:207-226](file://adapters/qq-bot/index.js#L207-L226)
 
@@ -182,7 +196,9 @@ Reply --> End(["结束"])
   - 回复时根据后端支持选择文本摘要或直传链接
 - 会话隔离：基于 d.author.id 建立独立会话，避免跨用户消息串扰
 
-章节来源
+**更新** 代码重构后，消息处理逻辑更加健壮，增加了更多的错误检查和日志输出。
+
+**章节来源**
 - [index.js:207-226](file://adapters/qq-bot/index.js#L207-L226)
 
 ### 连接管理、心跳保持与断线重连
@@ -190,6 +206,8 @@ Reply --> End(["结束"])
 - 鉴权：收到 Hello 后，根据 heartbeat_interval 启动心跳，并发送 Identify（含 intents 与 shard）
 - 心跳：周期性发送 op=1 的心跳包，确保连接存活
 - 断线重连：on('close') 清理心跳，等待 5 秒后重新 connect()
+
+**更新** 代码重构后，连接管理逻辑更加清晰，增加了更多的状态检查和错误处理。
 
 ```mermaid
 sequenceDiagram
@@ -207,11 +225,11 @@ A->>A : "clearInterval(heartbeat)"
 A->>A : "setTimeout(connect,5000)"
 ```
 
-图表来源
+**图表来源**
 - [index.js:133-197](file://adapters/qq-bot/index.js#L133-L197)
 - [index.js:199-204](file://adapters/qq-bot/index.js#L199-L204)
 
-章节来源
+**章节来源**
 - [index.js:133-197](file://adapters/qq-bot/index.js#L133-L197)
 - [index.js:199-204](file://adapters/qq-bot/index.js#L199-L204)
 
@@ -232,7 +250,9 @@ A->>A : "setTimeout(connect,5000)"
   - 仅在公网可访问的服务器上部署，确保 QQ 回调可达
   - 对外暴露的 API 仅用于适配器内部，避免直接对外公开
 
-章节来源
+**更新** 配置模块经过重构，使用更清晰的结构和更详细的注释说明。
+
+**章节来源**
 - [index.js:27-37](file://adapters/qq-bot/index.js#L27-L37)
 - [index.js:154-163](file://adapters/qq-bot/index.js#L154-L163)
 - [index.js:238-257](file://adapters/qq-bot/index.js#L238-L257)
@@ -248,7 +268,9 @@ A->>A : "setTimeout(connect,5000)"
 - 日志
   - 连接、鉴权、消息、回复、心跳、重连均有日志输出，便于排障
 
-章节来源
+**更新** 代码重构后，错误处理机制更加完善，增加了更多的日志输出和错误检查。
+
+**章节来源**
 - [index.js:137-196](file://adapters/qq-bot/index.js#L137-L196)
 - [index.js:183-185](file://adapters/qq-bot/index.js#L183-L185)
 - [index.js:216-225](file://adapters/qq-bot/index.js#L216-L225)
@@ -266,7 +288,9 @@ A->>A : "setTimeout(connect,5000)"
   - 对频繁用户采用本地缓存会话 ID，降低 HTTP 调用次数
   - 对长文本回复进行分片发送（如需）
 
-章节来源
+**更新** 代码重构后，性能优化策略更加明确，资源管理更加规范。
+
+**章节来源**
 - [index.js:74](file://adapters/qq-bot/index.js#L74)
 - [index.js:199-204](file://adapters/qq-bot/index.js#L199-L204)
 - [index.js:80-104](file://adapters/qq-bot/index.js#L80-L104)
@@ -303,11 +327,11 @@ datetime createdAt
 SESSION ||--o{ MESSAGE : "包含"
 ```
 
-图表来源
+**图表来源**
 - [types.ts:60-86](file://shared/types.ts#L60-L86)
 - [types.ts:79-86](file://shared/types.ts#L79-L86)
 
-章节来源
+**章节来源**
 - [sessions.controller.ts:8-11](file://src/sessions/sessions.controller.ts#L8-L11)
 - [messages.controller.ts:14-25](file://src/messages/messages.controller.ts#L14-L25)
 - [types.ts:60-86](file://shared/types.ts#L60-L86)
@@ -321,6 +345,8 @@ SESSION ||--o{ MESSAGE : "包含"
   - 与 NestJS 的接口契约：/api/sessions、/api/chat/{sessionId}、/api/messages
   - 共享类型：SessionData、MessageData
 
+**更新** 依赖分析保持不变，但代码重构后依赖关系更加清晰。
+
 ```mermaid
 graph LR
 IDX["index.js"] --> WS["ws"]
@@ -332,7 +358,7 @@ IDX --> MSG["/api/messages"]
 IDX --> TYPES["shared/types.ts"]
 ```
 
-图表来源
+**图表来源**
 - [index.js:21](file://adapters/qq-bot/index.js#L21)
 - [index.js:27-37](file://adapters/qq-bot/index.js#L27-L37)
 - [index.js:80-104](file://adapters/qq-bot/index.js#L80-L104)
@@ -340,7 +366,7 @@ IDX --> TYPES["shared/types.ts"]
 - [index.js:107-118](file://adapters/qq-bot/index.js#L107-L118)
 - [types.ts:60-86](file://shared/types.ts#L60-L86)
 
-章节来源
+**章节来源**
 - [index.js:21](file://adapters/qq-bot/index.js#L21)
 - [index.js:27-37](file://adapters/qq-bot/index.js#L27-L37)
 - [index.js:80-104](file://adapters/qq-bot/index.js#L80-L104)
@@ -354,6 +380,8 @@ IDX --> TYPES["shared/types.ts"]
 - 会话缓存：Map 缓存用户到 sessionId 的映射，减少重复 HTTP 请求
 - 资源回收：连接关闭时清理定时器与回调，防止内存泄漏
 - 扩展建议：引入背压/队列、批量处理、超时控制与熔断策略
+
+**更新** 性能考虑保持不变，但代码重构后性能表现更加稳定。
 
 ## 故障排查指南
 - 启动失败
@@ -369,18 +397,21 @@ IDX --> TYPES["shared/types.ts"]
 - 日志定位
   - 关注连接、鉴权、消息、回复、心跳、重连等关键日志节点
 
-章节来源
+**更新** 故障排查指南保持不变，但代码重构后日志更加详细，便于问题定位。
+
+**章节来源**
 - [index.js:268-290](file://adapters/qq-bot/index.js#L268-L290)
 - [index.js:137-196](file://adapters/qq-bot/index.js#L137-L196)
 - [index.js:216-225](file://adapters/qq-bot/index.js#L216-L225)
 
 ## 结论
-该适配器以最小实现覆盖了 QQ 机器人接入的核心链路：WebSocket 事件监听、鉴权与心跳、会话映射、HTTP 调用与回复发送。adapter.js 提供了 SDK 集成的参考路径，index.js 则给出了完整的工程化实现。对于多媒体消息与更复杂的业务场景，可在现有框架上进行扩展，同时注意性能与稳定性保障。
+该适配器以最小实现覆盖了 QQ 机器人接入的核心链路：WebSocket 事件监听、鉴权与心跳、会话映射、HTTP 调用与回复发送。adapter.js 提供了 SDK 集成的参考路径，index.js 则给出了完整的工程化实现。经过代码重构和格式化后，适配器的结构更加清晰，配置加载更加完善，错误处理更加健壮。对于多媒体消息与更复杂的业务场景，可在现有框架上进行扩展，同时注意性能与稳定性保障。
+
+**更新** 代码重构显著提升了适配器的可维护性和可靠性。
 
 ## 附录
 - 环境变量示例位置：.env（用于存放 QQ_BOT_APP_ID、QQ_BOT_APP_SECRET、QQ_BOT_TOKEN、API_BASE、QQ_CHARACTER_ID 等）
 - 前端 API 封装：web/src/api/index.ts 中的 createSession、getSession、getSessions、sendMessage 等方法，便于理解与复用
 
-章节来源
-- [.env 示例](file://.env)
+**章节来源**
 - [index.ts（Web API 封装）:87-112](file://web/src/api/index.ts#L87-L112)

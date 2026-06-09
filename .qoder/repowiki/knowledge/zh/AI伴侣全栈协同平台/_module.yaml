@@ -2,35 +2,139 @@ schema_version: 1
 module_path: ""
 title: AI伴侣全栈协同平台
 scope:
-    - README.md
+    - .dockerignore
+    - .env
+    - .env.docker.example
+    - .env.example
     - .gitignore
     - .prettierrc
-    - eslint.config.mjs
-    - nest-cli.json
-    - package.json
-    - package-lock.json
-    - start.bat
-    - test_chat.js
-    - tsconfig.build.json
-    - tsconfig.json
-    - adapters/
-    - shared/
-    - docs/
-    - tools/
-    - test/
-    - .env
-    - .env.example
+    - .qoder\repowiki\knowledge\zh\AI 伴侣聊天前端应用\_module.yaml
+    - .qoder\repowiki\knowledge\zh\AI 伴侣聊天前端应用\技术栈.md
+    - .qoder\repowiki\knowledge\zh\AI 伴侣聊天前端应用\架构设计.md
+    - .qoder\repowiki\knowledge\zh\AI 伴侣聊天前端应用\概述.md
+    - .qoder\repowiki\knowledge\zh\AI 伴侣聊天前端应用\编码规范.md
+    - .qoder\repowiki\knowledge\zh\AI伴侣全栈协同平台\_module.yaml
+    - .qoder\repowiki\knowledge\zh\AI伴侣全栈协同平台\技术栈.md
+    - .qoder\repowiki\knowledge\zh\AI伴侣全栈协同平台\架构设计.md
+    - .qoder\repowiki\knowledge\zh\AI伴侣全栈协同平台\概述.md
+    - .qoder\repowiki\knowledge\zh\AI伴侣全栈协同平台\编码规范.md
+    - .qoder\repowiki\knowledge\zh\AI伴侣后端服务\_module.yaml
+    - .qoder\repowiki\knowledge\zh\AI伴侣后端服务\应用启动与核心配置\_module.yaml
+    - .qoder\repowiki\knowledge\zh\AI伴侣后端服务\应用启动与核心配置\技术栈.md
+    - .qoder\repowiki\knowledge\zh\AI伴侣后端服务\应用启动与核心配置\架构设计.md
+    - .qoder\repowiki\knowledge\zh\AI伴侣后端服务\应用启动与核心配置\概述.md
+    - .qoder\repowiki\knowledge\zh\AI伴侣后端服务\应用启动与核心配置\特殊配置与命令.md
+    - .qoder\repowiki\knowledge\zh\AI伴侣后端服务\应用启动与核心配置\编码规范.md
+    - .qoder\repowiki\knowledge\zh\AI伴侣后端服务\技术栈.md
+    - .qoder\repowiki\knowledge\zh\AI伴侣后端服务\架构设计.md
+    - .qoder\repowiki\knowledge\zh\AI伴侣后端服务\概述.md
+    - .qoder\repowiki\knowledge\zh\AI伴侣后端服务\编码规范.md
+    - .qoder\repowiki\knowledge\zh\_index.yaml
+    - .qoder\repowiki\knowledge\zh\文本向量化服务\_module.yaml
+    - .qoder\repowiki\knowledge\zh\文本向量化服务\技术栈.md
+    - .qoder\repowiki\knowledge\zh\文本向量化服务\架构设计.md
+    - .qoder\repowiki\knowledge\zh\文本向量化服务\概述.md
+    - .qoder\repowiki\knowledge\zh\文本向量化服务\特殊配置与命令.md
+    - .qoder\repowiki\knowledge\zh\文本向量化服务\编码规范.md
+    - .qoder\repowiki\zh\content\AI服务集成\AI服务集成.md
+    - .qoder\repowiki\zh\content\AI服务集成\LLM推理服务.md
+    - .qoder\repowiki\zh\content\AI服务集成\向量嵌入服务.md
+    - .qoder\repowiki\zh\content\AI服务集成\情感分析服务.md
+    - .qoder\repowiki\zh\content\API接口文档\API接口文档.md
+    - .qoder\repowiki\zh\content\API接口文档\会话管理接口.md
+    - .qoder\repowiki\zh\content\API接口文档\消息管理接口.md
+    - .qoder\repowiki\zh\content\API接口文档\聊天接口.md
+    - .qoder\repowiki\zh\content\API接口文档\角色管理接口.md
+    - .qoder\repowiki\zh\content\前端应用详解\React应用架构.md
+    - .qoder\repowiki\zh\content\前端应用详解\上下文状态管理.md
+    - .qoder\repowiki\zh\content\前端应用详解\侧边栏系统.md
+    - .qoder\repowiki\zh\content\前端应用详解\前端应用详解.md
+    - .qoder\repowiki\zh\content\前端应用详解\聊天界面组件.md
+    - .qoder\repowiki\zh\content\后端服务详解\LLM推理服务.md
+    - .qoder\repowiki\zh\content\后端服务详解\会话管理模块.md
+    - .qoder\repowiki\zh\content\后端服务详解\后端服务详解.md
+    - .qoder\repowiki\zh\content\后端服务详解\向量嵌入服务.md
+    - .qoder\repowiki\zh\content\后端服务详解\应用模块架构.md
+    - .qoder\repowiki\zh\content\后端服务详解\情感分析模块.md
+    - .qoder\repowiki\zh\content\后端服务详解\消息管理模块.md
+    - .qoder\repowiki\zh\content\后端服务详解\聊天服务模块\会话管理.md
+    - .qoder\repowiki\zh\content\后端服务详解\聊天服务模块\流式响应处理.md
+    - .qoder\repowiki\zh\content\后端服务详解\聊天服务模块\消息处理.md
+    - .qoder\repowiki\zh\content\后端服务详解\聊天服务模块\聊天控制器.md
+    - .qoder\repowiki\zh\content\后端服务详解\聊天服务模块\聊天服务实现.md
+    - .qoder\repowiki\zh\content\后端服务详解\聊天服务模块\聊天服务模块.md
+    - .qoder\repowiki\zh\content\后端服务详解\角色管理系统.md
+    - .qoder\repowiki\zh\content\后端服务详解\记忆存储模块.md
+    - .qoder\repowiki\zh\content\多平台适配器\QQ机器人适配器.md
+    - .qoder\repowiki\zh\content\多平台适配器\Telegram适配器.md
+    - .qoder\repowiki\zh\content\多平台适配器\多平台适配器.md
+    - .qoder\repowiki\zh\content\多平台适配器\微信小程序适配器.md
+    - .qoder\repowiki\zh\content\多平台适配器\适配器架构设计.md
+    - .qoder\repowiki\zh\content\开发工具与脚本.md
+    - .qoder\repowiki\zh\content\快速开始.md
+    - .qoder\repowiki\zh\content\故障排除\常见问题诊断.md
+    - .qoder\repowiki\zh\content\故障排除\性能问题排查.md
+    - .qoder\repowiki\zh\content\故障排除\故障排除.md
+    - .qoder\repowiki\zh\content\故障排除\日志分析与调试.md
+    - .qoder\repowiki\zh\content\故障排除\网络问题诊断.md
+    - .qoder\repowiki\zh\content\数据库设计\向量存储与检索.md
+    - .qoder\repowiki\zh\content\数据库设计\实体模型设计.md
+    - .qoder\repowiki\zh\content\数据库设计\性能优化与索引设计.md
+    - .qoder\repowiki\zh\content\数据库设计\数据库架构.md
+    - .qoder\repowiki\zh\content\数据库设计\数据库设计.md
+    - .qoder\repowiki\zh\content\测试策略\单元测试.md
+    - .qoder\repowiki\zh\content\测试策略\性能测试.md
+    - .qoder\repowiki\zh\content\测试策略\测试策略.md
+    - .qoder\repowiki\zh\content\测试策略\集成测试.md
+    - .qoder\repowiki\zh\content\系统架构设计\扩展模式设计.md
+    - .qoder\repowiki\zh\content\系统架构设计\数据流设计.md
+    - .qoder\repowiki\zh\content\系统架构设计\整体架构设计.md
+    - .qoder\repowiki\zh\content\系统架构设计\模块化设计.md
+    - .qoder\repowiki\zh\content\系统架构设计\系统架构设计.md
+    - .qoder\repowiki\zh\content\贡献指南.md
+    - .qoder\repowiki\zh\content\部署与运维\安全配置.md
+    - .qoder\repowiki\zh\content\部署与运维\开发环境部署.md
+    - .qoder\repowiki\zh\content\部署与运维\性能优化.md
+    - .qoder\repowiki\zh\content\部署与运维\生产环境部署.md
+    - .qoder\repowiki\zh\content\部署与运维\监控与日志管理.md
+    - .qoder\repowiki\zh\content\部署与运维\部署与运维.md
+    - .qoder\repowiki\zh\content\项目概述\开发环境搭建.md
+    - .qoder\repowiki\zh\content\项目概述\技术栈概览.md
+    - .qoder\repowiki\zh\content\项目概述\核心功能特性\LLM推理服务.md
+    - .qoder\repowiki\zh\content\项目概述\核心功能特性\上下文记忆持久化\上下文记忆持久化.md
+    - .qoder\repowiki\zh\content\项目概述\核心功能特性\上下文记忆持久化\向量相似度检索.md
+    - .qoder\repowiki\zh\content\项目概述\核心功能特性\上下文记忆持久化\记忆存储机制.md
+    - .qoder\repowiki\zh\content\项目概述\核心功能特性\上下文记忆持久化\记忆实体设计.md
+    - .qoder\repowiki\zh\content\项目概述\核心功能特性\上下文记忆持久化\重复检测系统.md
+    - .qoder\repowiki\zh\content\项目概述\核心功能特性\多角色聊天管理.md
+    - .qoder\repowiki\zh\content\项目概述\核心功能特性\情感分析与情绪调节.md
+    - .qoder\repowiki\zh\content\项目概述\核心功能特性\核心功能特性.md
+    - .qoder\repowiki\zh\content\项目概述\系统架构概览.md
+    - .qoder\repowiki\zh\content\项目概述\项目介绍.md
+    - .qoder\repowiki\zh\content\项目概述\项目概述.md
+    - .qoder\repowiki\zh\meta\repowiki-metadata.json
+    - Dockerfile
+    - README.md
     - adapters\README.md
     - adapters\miniprogram\api-uni.js
     - adapters\miniprogram\api.js
     - adapters\qq-bot\adapter.js
     - adapters\qq-bot\index.js
+    - docker-compose.yml
     - docs\AI_Companion_NestJS.md
     - docs\AI_Companion_Roadmap.md
     - docs\AI_Companion_最终方案.md
+    - docs\Docker_Deployment.md
     - docs\Implementation_Plan.md
     - docs\Learning_Notes.md
+    - docs\Project_Rules.md
+    - eslint.config.mjs
+    - nest-cli.json
+    - package-lock.json
+    - package.json
+    - python\.dockerignore
     - python\.gitignore
+    - python\Dockerfile
     - python\embedder.py
     - python\main.py
     - python\models\.gitkeep
@@ -76,12 +180,16 @@ scope:
     - src\sessions\sessions.controller.ts
     - src\sessions\sessions.module.ts
     - src\sessions\sessions.service.ts
+    - start.bat
     - test\app.e2e-spec.ts
     - test\jest-e2e.json
+    - test_chat.js
     - tools\README_wechat_export.md
     - tools\chat_converter.py
     - tools\export_wechat_current_chat.bat
     - tools\export_wechat_current_chat.ps1
+    - tsconfig.build.json
+    - tsconfig.json
     - web\index.html
     - web\package-lock.json
     - web\package.json
