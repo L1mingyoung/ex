@@ -14,16 +14,16 @@ echo ============================================
 echo.
 
 :: ===== 第一步：构建镜像 =====
-echo [1/4] 构建 companion-api 镜像...
-docker build -t companion-api:latest .
+echo [1/4] 构建 companion-api 镜像（--no-cache 确保最新代码）...
+docker build --no-cache -t companion-api:latest .
 if errorlevel 1 (
     echo 构建 API 镜像失败！
     pause
     exit /b 1
 )
 
-echo [2/4] 构建 companion-embedding 镜像...
-docker build -t companion-embedding:latest ./python
+echo [2/4] 构建 companion-embedding 镜像（--no-cache）...
+docker build --no-cache -t companion-embedding:latest ./python
 if errorlevel 1 (
     echo 构建 Embedding 镜像失败！
     pause
@@ -44,7 +44,8 @@ for %%F in (companion-images.tar) do echo     镜像大小: %%~zF bytes
 
 :: ===== 第三步：上传到服务器 =====
 echo [4/4] 上传镜像到服务器 %SERVER%...
-scp companion-images.tar %SERVER%:%REMOTE_DIR%/
+echo     文件较大，请耐心等待（可能需要几分钟到十几分钟）...
+scp -o ConnectTimeout=30 -o ServerAliveInterval=60 -o ServerAliveCountMax=3 companion-images.tar %SERVER%:%REMOTE_DIR%/
 if errorlevel 1 (
     echo 上传失败！请检查 SSH 连接。
     pause

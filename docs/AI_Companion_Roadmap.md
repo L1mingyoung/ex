@@ -489,7 +489,7 @@ services:
 
 ---
 
-## 十二、QQ Bot 接入（已完成 v2）
+## 十二、QQ Bot 接入（已完成 v2.1）
 
 ### 12.1 架构
 
@@ -509,6 +509,9 @@ QQ 用户 ──→ QQ WebSocket 网关 ──→ QQ Bot 适配器 ──→ Nes
 | 消息去重          | 幂等处理，防止平台重复推送                            |
 | 频率控制          | 被动回复 5 分钟内最多 2 条                            |
 | 沙箱/正式切换     | `.env` 中 `QQ_BOT_SANDBOX=1` 切换沙箱模式             |
+| 会话持久化        | sessionMap 持久化到状态文件，重启不丢失               |
+| 404 自动重建      | 会话不存在时自动清除缓存并创建新会话                  |
+| QQ/Web 会话同步   | QQ Bot 复用角色已有会话，实现跨端聊天记录共享         |
 
 ### 12.3 启动方式
 
@@ -518,18 +521,32 @@ npm run qqbot
 # 或
 node adapters/qq-bot/index.js
 
+# Docker 部署
+docker compose -f docker-compose.prod.yml --profile qqbot up -d
+
 # 一键启动（start.bat 自动检测 .env 中的 QQ_BOT_APP_ID）
 start.bat
 ```
 
-### 12.4 待完善
+### 12.4 部署踩坑记录
+
+| 问题                         | 根因                                            | 解决方案                               |
+| ---------------------------- | ----------------------------------------------- | -------------------------------------- |
+| 4004 鉴权失败                | token 格式用旧 `QQBot APPID.TOKEN`              | 改为 `QQBot ${accessToken}`            |
+| 4004 + Docker 部署后仍失败   | `--no-cache` 没加，构建缓存用了旧代码           | `docker build --no-cache`              |
+| 加了 `--no-cache` 还是旧代码 | Docker 命名卷挂载整个代码目录，旧卷覆盖了新镜像 | 状态文件改用独立目录 `/app/data/qqbot` |
+| 会话 404 不存在              | 旧卷里的 sessionMap 指向了另一个数据库的会话 ID | `chat()` 捕获 404 自动重建会话         |
+| QQ 收不到回复                | HTTP API 鉴权头硬编码旧格式，且未检查状态码     | 统一用 `authHeader()` + 状态码校验     |
+
+### 12.5 待完善
 
 - [ ] 富文本消息（图片、表情、Markdown）
 - [ ] 消息队列化（进一步控制频率）
 - [ ] 主动消息推送（结合定时任务）
 - [ ] 正式环境审核通过后切换网关
+- [ ] 用户绑定方案 B（多用户 QQ↔Web 身份关联）
 
-### 12.5 相关文档
+### 12.6 相关文档
 
 - 详细接入指南：`docs/QQ_Bot_Integration.md`
 - 适配器代码：`adapters/qq-bot/index.js`

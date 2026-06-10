@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Param, Delete } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Post } from '@nestjs/common';
 import { SessionsService } from './sessions.service';
 
 @Controller('api/sessions')
@@ -7,6 +7,13 @@ export class SessionsController {
 
   @Post()
   create(@Body() body: { characterId: string; title?: string }) {
+    console.log('[Sessions] POST body:', JSON.stringify(body));
+    console.log(
+      '[Sessions] characterId:',
+      body.characterId,
+      'title:',
+      body.title,
+    );
     return this.sessionsService.create(body.characterId, body.title);
   }
 

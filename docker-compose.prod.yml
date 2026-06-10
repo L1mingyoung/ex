@@ -80,8 +80,9 @@ services:
       QQ_BOT_SANDBOX: ${QQ_BOT_SANDBOX:-0}
       QQ_CHARACTER_ID: ${QQ_CHARACTER_ID:-xiaoya}
       API_BASE: http://api:3000
+      QQ_BOT_STATE_DIR: /app/data/qqbot
     volumes:
-      - qqbot_state:/app/adapters/qq-bot
+      - qqbot_state:/app/data/qqbot
     depends_on:
       api:
         condition: service_started

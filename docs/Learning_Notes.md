@@ -4356,3 +4356,107 @@ volumes:
 | `deploy.bat`              | 本地一键打包+上传脚本          |
 | `.env`                    | 环境变量配置（不进入 Git）     |
 | `.dockerignore`           | 告诉 Docker 构建时忽略哪些文件 |
+
+---
+
+## 十一、QQ Bot v2.1 部署实战笔记
+
+### 1. 鉴权格式（最容易错的点）
+
+QQ 开放平台有两种鉴权方式，旧 Token 模式已废弃：
+
+```
+❌ 旧格式：QQBot ${AppID}.${AccessToken}
+✅ 新格式：QQBot ${AccessToken}
+```
+
+**验证方法**（在容器里直接看代码）：
+
+```bash
+docker exec -it companion-qqbot grep -A 3 'function authHeader' /app/adapters/qq-bot/index.js
+```
+
+### 2. Intents 权限位
+
+必须同时启用两个位才能收到私聊和群聊消息：
+
+```javascript
+intents: (1 << 25) | (1 << 30);
+// bit 25 = GROUP_AT_MESSAGE_CREATE
+// bit 30 = C2C_MESSAGE_CREATE
+```
+
+如果只设了一个，4004 鉴权可能不会报错，但收不到某类消息。
+
+### 3. Docker 命名卷的陷阱
+
+**问题**：volume 挂载整个代码目录 → 旧卷数据覆盖新镜像代码
+
+```yaml
+# ❌ 错误：挂载代码目录
+volumes:
+  - qqbot_state:/app/adapters/qq-bot
+
+# ✅ 正确：只挂载数据目录
+environment:
+  QQ_BOT_STATE_DIR: /app/data/qqbot
+volumes:
+  - qqbot_state:/app/data/qqbot
+```
+
+**关键教训**：
+
+- Docker 命名卷只在**首次创建时**从镜像复制文件
+- 后续启动始终使用卷内数据，镜像更新无效
+- `--no-cache` 也救不了，因为问题不在镜像而在卷
+- 解决方案：状态文件和代码分离，卷只挂载数据
+
+### 4. 会话 ID 不一致问题
+
+**场景**：本地测试创建了会话 A，状态文件持久化了 A 的 ID。部署到服务器后，服务器数据库里没有会话 A → 404。
+
+**解决**：`chat()` 函数捕获 404，自动清除旧映射并创建新会话：
+
+```javascript
+async function chat(sessionKey, sessionId, content) {
+  try {
+    return (await apiRequest('POST', `/api/chat/${sessionId}`, { content }))
+      .reply;
+  } catch (err) {
+    if (err.message.includes('404')) {
+      // 会话不存在，强制重建
+      return (
+        await apiRequest(
+          'POST',
+          `/api/chat/${await getOrCreateSession(sessionKey, true)}`,
+          { content },
+        )
+      ).reply;
+    }
+    throw err;
+  }
+}
+```
+
+### 5. QQ 与 Web 会话同步（方案 A）
+
+QQ Bot 启动时先查该角色是否已有会话（Web 端创建的也算），有就复用：
+
+```javascript
+const sessions = await apiRequest('GET', '/api/sessions');
+const existing = sessions.find((s) => s.characterId === CONFIG.characterId);
+if (existing) {
+  // 复用已有会话，QQ 和 Web 共享聊天记录
+  sessionMap.set(sessionKey, existing.id);
+}
+```
+
+### 6. 经验总结
+
+| 教训                              | 适用场景                 |
+| --------------------------------- | ------------------------ |
+| Docker 构建加 `--no-cache`        | 任何代码更新后的镜像重建 |
+| Volume 只挂数据不挂代码           | 所有需要持久化状态的容器 |
+| 容器内验证代码 `docker exec grep` | 部署后确认代码是否更新   |
+| API 调用加 404 兜底               | 任何有缓存 ID 的场景     |
+| `.env` 值不加引号                 | 所有环境变量配置         |

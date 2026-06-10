@@ -53,7 +53,9 @@ const API_HOST = CONFIG.sandbox
     : 'api.sgroup.qq.com';
 
 // 状态持久化文件（重启后可 Resume）
-const STATE_FILE = path.join(__dirname, '.qq-bot-state.json');
+// 使用独立目录，避免 Docker volume 覆盖代码文件
+const STATE_DIR = process.env.QQ_BOT_STATE_DIR || path.join(__dirname);
+const STATE_FILE = path.join(STATE_DIR, '.qq-bot-state.json');
 
 // ═══════════════════════════════════════
 //  Access Token 管理
@@ -81,9 +83,9 @@ async function getAccessToken() {
     throw new Error('获取 token 失败: ' + JSON.stringify(result));
 }
 
-/** 生成鉴权 Header */
+/** 生成鉴权 Header（Access Token 模式：QQBot TOKEN） */
 function authHeader() {
-    return `QQBot ${CONFIG.appId}.${accessToken}`;
+    return `QQBot ${accessToken}`;
 }
 
 // ═══════════════════════════════════════
@@ -186,6 +188,10 @@ function apiRequest(method, apiPath, body) {
             let b = '';
             res.on('data', (c) => (b += c));
             res.on('end', () => {
+                if (res.statusCode >= 400) {
+                    reject(new Error(`API ${method} ${apiPath} 返回 ${res.statusCode}: ${b}`));
+                    return;
+                }
                 try {
                     resolve(JSON.parse(b));
                 } catch {
@@ -215,7 +221,7 @@ async function qqApiRequest(method, urlPath, body) {
             method,
             headers: {
                 'Content-Type': 'application/json',
-                Authorization: `QQBot ${CONFIG.appId}.${token}`,
+                Authorization: authHeader(),
                 ...(data ? { 'Content-Length': Buffer.byteLength(data) } : {}),
             },
         };
@@ -223,6 +229,11 @@ async function qqApiRequest(method, urlPath, body) {
             let b = '';
             res.on('data', (c) => (b += c));
             res.on('end', () => {
+                if (res.statusCode >= 400) {
+                    console.error(`[QQ API] ${method} ${urlPath} 返回 ${res.statusCode}: ${b}`);
+                    reject(new Error(`QQ API ${res.statusCode}: ${b}`));
+                    return;
+                }
                 try {
                     resolve(JSON.parse(b));
                 } catch {
@@ -244,23 +255,49 @@ async function qqApiRequest(method, urlPath, body) {
 //  业务逻辑：会话管理 + 聊天
 // ═══════════════════════════════════════
 
-/** 获取或创建会话（私聊按用户，群聊按群+用户） */
-async function getOrCreateSession(sessionKey) {
-    if (sessionMap.has(sessionKey)) return sessionMap.get(sessionKey);
+/** 获取或创建会话（优先复用该角色已有会话，实现 QQ/Web 聊天记录同步） */
+async function getOrCreateSession(sessionKey, force = false) {
+    if (sessionMap.has(sessionKey) && !force) return sessionMap.get(sessionKey);
+
+    // 先查找该角色是否已有会话（Web 端创建的也算）
+    try {
+        const sessions = await apiRequest('GET', '/api/sessions');
+        const existing = sessions.find((s) => s.characterId === CONFIG.characterId);
+        if (existing) {
+            sessionMap.set(sessionKey, existing.id);
+            saveState();
+            console.log(`[Session] 复用已有会话 ${existing.id} (${existing.title || '无标题'})`);
+            return existing.id;
+        }
+    } catch (err) {
+        console.log(`[Session] 查询已有会话失败: ${err.message}，将创建新会话`);
+    }
 
     const session = await apiRequest('POST', '/api/sessions', {
         characterId: CONFIG.characterId,
         title: `QQ-${sessionKey}`,
     });
     sessionMap.set(sessionKey, session.id);
-    console.log(`[Session] ${sessionKey} → session ${session.id}`);
+    saveState(); // 新会话立即持久化
+    console.log(`[Session] ${sessionKey} → 新建 session ${session.id}`);
     return session.id;
 }
 
-/** 发消息给 AI 并获取回复 */
-async function chat(sessionId, content) {
-    const result = await apiRequest('POST', `/api/chat/${sessionId}`, { content });
-    return result.reply;
+/** 发消息给 AI 并获取回复（404 时自动重建会话） */
+async function chat(sessionKey, sessionId, content) {
+    try {
+        const result = await apiRequest('POST', `/api/chat/${sessionId}`, { content });
+        return result.reply;
+    } catch (err) {
+        // 会话不存在（数据库被重置/迁移），清除缓存并重建
+        if (err.message.includes('404')) {
+            console.log(`[Session] ${sessionId} 不存在，重新创建...`);
+            const newId = await getOrCreateSession(sessionKey, true);
+            const result = await apiRequest('POST', `/api/chat/${newId}`, { content });
+            return result.reply;
+        }
+        throw err;
+    }
 }
 
 // ═══════════════════════════════════════
@@ -328,12 +365,17 @@ let sessionId = ''; // QQ 平台的 session_id（非我们的业务 session）
 let heartbeatInterval = null;
 let isResuming = false;
 
-/** 保存状态（用于 Resume） */
+/** 保存状态（WebSocket Resume + 会话映射） */
 function saveState() {
     try {
         fs.writeFileSync(
             STATE_FILE,
-            JSON.stringify({ seq, sessionId, timestamp: Date.now() }),
+            JSON.stringify({
+                seq,
+                sessionId,
+                sessionMap: Object.fromEntries(sessionMap),
+                timestamp: Date.now(),
+            }),
         );
     } catch (err) {
         // 写入失败不阻塞主流程
@@ -345,7 +387,14 @@ function loadState() {
     try {
         if (fs.existsSync(STATE_FILE)) {
             const state = JSON.parse(fs.readFileSync(STATE_FILE, 'utf-8'));
-            // 超过 30 分钟不 Resume（QQ 平台限制）
+            // 恢复会话映射（不受 30 分钟限制）
+            if (state.sessionMap) {
+                for (const [key, value] of Object.entries(state.sessionMap)) {
+                    sessionMap.set(key, value);
+                }
+                console.log(`[State] 恢复了 ${sessionMap.size} 个会话映射`);
+            }
+            // QQ 平台 session 超过 30 分钟不 Resume
             if (Date.now() - state.timestamp < 30 * 60 * 1000) {
                 return state;
             }
@@ -532,13 +581,14 @@ async function handleC2CMessage(d) {
     try {
         const sessionKey = `c2c-${qqUserId}`;
         const sid = await getOrCreateSession(sessionKey);
-        const reply = await chat(sid, content);
+        const reply = await chat(sessionKey, sid, content);
         if (!reply) return;
 
         await sendC2CReply(qqUserId, reply, msgId);
         console.log(`[Reply] → ${reply.substring(0, 50)}`);
     } catch (err) {
         console.error('[QQ Bot] 私聊回复失败:', err.message);
+        console.error('[QQ Bot] 错误堆栈:', err.stack);
     }
 }
 
@@ -574,7 +624,7 @@ async function handleGroupMessage(d) {
         // 群聊会话按 群+用户 维度隔离（同一群里不同用户各有独立对话）
         const sessionKey = `group-${groupId}-${qqUserId}`;
         const sid = await getOrCreateSession(sessionKey);
-        const reply = await chat(sid, content);
+        const reply = await chat(sessionKey, sid, content);
         if (!reply) return;
 
         await sendGroupReply(groupId, reply, msgId);
