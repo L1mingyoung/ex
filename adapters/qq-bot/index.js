@@ -25,6 +25,12 @@ if (require('fs').existsSync(dotenvPath)) {
  *   - 群聊消息支持
  *   - 消息去重（幂等处理）
  *   - 频率限制控制
+ *
+ * v2.1 新增：
+ *   - 多角色切换（/switch /char /chars /help）
+ *   - 聊天记录导入（/import + /enrich）
+ *   - 用户-角色绑定持久化（重启后保留）
+ *   - sessionKey 按角色隔离（同用户不同角色各有独立会话）
  */
 
 const WebSocket = require('ws');
@@ -92,7 +98,13 @@ function authHeader() {
 //  会话映射：QQ 用户 → sessionId
 // ═══════════════════════════════════════
 
-const sessionMap = new Map(); // qqUserId → sessionId
+const sessionMap = new Map(); // sessionKey → sessionId
+const userCharacterMap = new Map(); // qqUserId → characterId
+
+/** 获取用户绑定的角色 ID（未绑定则返回默认角色） */
+function getUserCharacter(qqUserId) {
+    return userCharacterMap.get(qqUserId) || CONFIG.characterId;
+}
 
 // ═══════════════════════════════════════
 //  消息去重
@@ -256,17 +268,17 @@ async function qqApiRequest(method, urlPath, body) {
 // ═══════════════════════════════════════
 
 /** 获取或创建会话（优先复用该角色已有会话，实现 QQ/Web 聊天记录同步） */
-async function getOrCreateSession(sessionKey, force = false) {
+async function getOrCreateSession(sessionKey, characterId, force = false) {
     if (sessionMap.has(sessionKey) && !force) return sessionMap.get(sessionKey);
 
     // 先查找该角色是否已有会话（Web 端创建的也算）
     try {
         const sessions = await apiRequest('GET', '/api/sessions');
-        const existing = sessions.find((s) => s.characterId === CONFIG.characterId);
+        const existing = sessions.find((s) => s.characterId === characterId);
         if (existing) {
             sessionMap.set(sessionKey, existing.id);
             saveState();
-            console.log(`[Session] 复用已有会话 ${existing.id} (${existing.title || '无标题'})`);
+            console.log(`[Session] 复用已有会话 ${existing.id} (${existing.title || '无标题'}) [角色:${characterId}]`);
             return existing.id;
         }
     } catch (err) {
@@ -274,17 +286,17 @@ async function getOrCreateSession(sessionKey, force = false) {
     }
 
     const session = await apiRequest('POST', '/api/sessions', {
-        characterId: CONFIG.characterId,
+        characterId,
         title: `QQ-${sessionKey}`,
     });
     sessionMap.set(sessionKey, session.id);
     saveState(); // 新会话立即持久化
-    console.log(`[Session] ${sessionKey} → 新建 session ${session.id}`);
+    console.log(`[Session] ${sessionKey} → 新建 session ${session.id} [角色:${characterId}]`);
     return session.id;
 }
 
 /** 发消息给 AI 并获取回复（404 时自动重建会话） */
-async function chat(sessionKey, sessionId, content) {
+async function chat(sessionKey, sessionId, content, characterId) {
     try {
         const result = await apiRequest('POST', `/api/chat/${sessionId}`, { content });
         return result.reply;
@@ -292,7 +304,7 @@ async function chat(sessionKey, sessionId, content) {
         // 会话不存在（数据库被重置/迁移），清除缓存并重建
         if (err.message.includes('404')) {
             console.log(`[Session] ${sessionId} 不存在，重新创建...`);
-            const newId = await getOrCreateSession(sessionKey, true);
+            const newId = await getOrCreateSession(sessionKey, characterId, true);
             const result = await apiRequest('POST', `/api/chat/${newId}`, { content });
             return result.reply;
         }
@@ -365,7 +377,7 @@ let sessionId = ''; // QQ 平台的 session_id（非我们的业务 session）
 let heartbeatInterval = null;
 let isResuming = false;
 
-/** 保存状态（WebSocket Resume + 会话映射） */
+/** 保存状态（WebSocket Resume + 会话映射 + 角色绑定） */
 function saveState() {
     try {
         fs.writeFileSync(
@@ -374,6 +386,7 @@ function saveState() {
                 seq,
                 sessionId,
                 sessionMap: Object.fromEntries(sessionMap),
+                characters: Object.fromEntries(userCharacterMap),
                 timestamp: Date.now(),
             }),
         );
@@ -393,6 +406,13 @@ function loadState() {
                     sessionMap.set(key, value);
                 }
                 console.log(`[State] 恢复了 ${sessionMap.size} 个会话映射`);
+            }
+            // 恢复用户角色绑定
+            if (state.characters) {
+                for (const [key, value] of Object.entries(state.characters)) {
+                    userCharacterMap.set(key, value);
+                }
+                console.log(`[State] 恢复了 ${userCharacterMap.size} 个角色绑定`);
             }
             // QQ 平台 session 超过 30 分钟不 Resume
             if (Date.now() - state.timestamp < 30 * 60 * 1000) {
@@ -556,6 +576,163 @@ function startHeartbeat(ws, interval) {
 }
 
 // ═══════════════════════════════════════
+//  命令系统（/switch /char /chars /import /help）
+// ═══════════════════════════════════════
+
+/** 解析命令，返回 { cmd, args } 或 null */
+function parseCommand(content) {
+    if (!content.startsWith('/')) return null;
+    const parts = content.split(/\s+/);
+    const cmd = parts[0].toLowerCase();
+    const args = parts.slice(1);
+    const validCmds = ['/switch', '/char', '/chars', '/import', '/enrich', '/help'];
+    if (validCmds.includes(cmd)) return { cmd, args };
+    return null;
+}
+
+/** 处理命令，返回回复文本。如果不是命令返回 null */
+async function handleCommand(qqUserId, content) {
+    const parsed = parseCommand(content);
+    if (!parsed) return null;
+
+    const { cmd, args } = parsed;
+
+    switch (cmd) {
+        case '/switch': {
+            const charId = args[0]?.trim();
+            if (!charId) {
+                return '用法：/switch <角色ID>\n输入 /chars 查看可用角色';
+            }
+            // 验证角色存在
+            try {
+                const characters = await apiRequest('GET', '/api/characters');
+                const found = characters.find((c) => c.id === charId);
+                if (!found) {
+                    const names = characters.map((c) => c.id).join('、');
+                    return `角色 "${charId}" 不存在\n可用角色：${names}`;
+                }
+                // 切换角色
+                userCharacterMap.set(qqUserId, charId);
+                saveState();
+                console.log(`[Command] ${qqUserId} 切换到角色 ${charId}`);
+                return `✅ 已切换到「${found.name || charId}」`;
+            } catch (err) {
+                return `切换失败：${err.message}`;
+            }
+        }
+
+        case '/char': {
+            const charId = getUserCharacter(qqUserId);
+            try {
+                const character = await apiRequest('GET', `/api/characters/${charId}`);
+                return `当前角色：${character.name || charId}（${charId}）`;
+            } catch {
+                return `当前角色：${charId}`;
+            }
+        }
+
+        case '/chars': {
+            try {
+                const characters = await apiRequest('GET', '/api/characters');
+                const current = getUserCharacter(qqUserId);
+                const lines = characters.map((c) => {
+                    const mark = c.id === current ? ' ◀ 当前' : '';
+                    return `  ${c.id} - ${c.name || '未命名'}${mark}`;
+                });
+                return `可用角色：\n${lines.join('\n')}\n\n切换：/switch <角色ID>`;
+            } catch (err) {
+                return `获取角色列表失败：${err.message}`;
+            }
+        }
+
+        case '/import': {
+            // 提取 /import 后面的全部文本（保留原始换行）
+            const importText = content.replace(/^\/import\s*/i, '').trim();
+            if (!importText) {
+                return [
+                    '用法：/import 后面粘贴聊天记录',
+                    '',
+                    '示例：',
+                    '/import',
+                    '小明 2024-01-01 10:00',
+                    '你好啊',
+                    '小雅 2024-01-01 10:01',
+                    '你好！有什么可以帮你的？',
+                    '',
+                    '支持格式：QQ 聊天记录、微信聊天记录、',
+                    '"昵称: 内容" 格式',
+                ].join('\n');
+            }
+            try {
+                const charId = getUserCharacter(qqUserId);
+                const sessionKey = `c2c-${qqUserId}-${charId}`;
+                const sid = await getOrCreateSession(sessionKey, charId);
+                const result = await apiRequest('POST', '/api/import/chat-records', {
+                    sessionId: sid,
+                    text: importText,
+                });
+                const flags = [
+                    result.memoryExtractionQueued ? '✅ 记忆提取' : null,
+                    result.summaryQueued ? '✅ 摘要生成' : null,
+                    result.profileExtractionQueued ? '✅ 人设分析' : null,
+                ].filter(Boolean);
+                console.log(
+                    `[Import] ${qqUserId} 导入 ${result.inserted}/${result.parsed} 条记录`,
+                );
+                return [
+                    `📥 导入成功`,
+                    `解析 ${result.parsed} 条 → 写入 ${result.inserted} 条`,
+                    flags.length ? flags.join('  ') : '',
+                    '',
+                    `可通过 /enrich 从导入记录中提取角色人设`,
+                ]
+                    .filter(Boolean)
+                    .join('\n');
+            } catch (err) {
+                return `导入失败：${err.message}`;
+            }
+        }
+
+        case '/enrich': {
+            // 从导入的聊天记录中提取角色人设（更新 base_prompt）
+            const mode = args[0]?.trim() === 'replace' ? 'replace' : 'merge';
+            try {
+                const charId = getUserCharacter(qqUserId);
+                const sessionKey = `c2c-${qqUserId}-${charId}`;
+                const sid = await getOrCreateSession(sessionKey, charId);
+                const result = await apiRequest(
+                    'POST',
+                    `/api/import/enrich-character/${sid}`,
+                    { mode },
+                );
+                if (!result || !result.generatedPrompt) {
+                    return '角色发言不足，无法提取人设（需要至少 5 条 assistant 消息）';
+                }
+                console.log(`[Enrich] ${qqUserId} 提取角色人设成功 (${mode})`);
+                return `🧠 角色人设提取成功（${mode} 模式）\n已更新当前角色的 base_prompt`;
+            } catch (err) {
+                return `人设提取失败：${err.message}`;
+            }
+        }
+
+        case '/help': {
+            return [
+                '📖 命令帮助：',
+                '/switch <角色ID> — 切换 AI 角色',
+                '/char — 查看当前角色',
+                '/chars — 列出所有角色',
+                '/import — 导入聊天记录（粘贴在命令后面）',
+                '/enrich [replace] — 从导入记录提取角色人设（默认合并）',
+                '/help — 显示此帮助',
+            ].join('\n');
+        }
+
+        default:
+            return null;
+    }
+}
+
+// ═══════════════════════════════════════
 //  消息处理
 // ═══════════════════════════════════════
 
@@ -579,9 +756,19 @@ async function handleC2CMessage(d) {
     }
 
     try {
-        const sessionKey = `c2c-${qqUserId}`;
-        const sid = await getOrCreateSession(sessionKey);
-        const reply = await chat(sessionKey, sid, content);
+        // 命令处理（不进入 AI 对话）
+        const cmdReply = await handleCommand(qqUserId, content);
+        if (cmdReply) {
+            await sendC2CReply(qqUserId, cmdReply, msgId);
+            console.log(`[Command Reply] → ${cmdReply.substring(0, 50)}`);
+            return;
+        }
+
+        // 正常聊天
+        const charId = getUserCharacter(qqUserId);
+        const sessionKey = `c2c-${qqUserId}-${charId}`;
+        const sid = await getOrCreateSession(sessionKey, charId);
+        const reply = await chat(sessionKey, sid, content, charId);
         if (!reply) return;
 
         await sendC2CReply(qqUserId, reply, msgId);
@@ -621,10 +808,19 @@ async function handleGroupMessage(d) {
     }
 
     try {
-        // 群聊会话按 群+用户 维度隔离（同一群里不同用户各有独立对话）
-        const sessionKey = `group-${groupId}-${qqUserId}`;
-        const sid = await getOrCreateSession(sessionKey);
-        const reply = await chat(sessionKey, sid, content);
+        // 命令处理（不进入 AI 对话）
+        const cmdReply = await handleCommand(qqUserId, content);
+        if (cmdReply) {
+            await sendGroupReply(groupId, cmdReply, msgId);
+            console.log(`[Command Reply:Group] → ${cmdReply.substring(0, 50)}`);
+            return;
+        }
+
+        // 正常聊天 — 角色感知的 sessionKey
+        const charId = getUserCharacter(qqUserId);
+        const sessionKey = `group-${groupId}-${qqUserId}-${charId}`;
+        const sid = await getOrCreateSession(sessionKey, charId);
+        const reply = await chat(sessionKey, sid, content, charId);
         if (!reply) return;
 
         await sendGroupReply(groupId, reply, msgId);
@@ -649,10 +845,11 @@ async function start() {
     }
 
     console.log('╔══════════════════════════════════════════╗');
-    console.log('║   AI Companion QQ Bot 适配器 v2          ║');
+    console.log('║   AI Companion QQ Bot 适配器 v2.1         ║');
+    console.log('║   多角色切换 · /switch · /chars · /help   ║');
     console.log('╚══════════════════════════════════════════╝');
     console.log(`API:      ${CONFIG.apiBase}`);
-    console.log(`角色:     ${CONFIG.characterId}`);
+    console.log(`默认角色: ${CONFIG.characterId}`);
     console.log(`网关:     ${GATEWAY}`);
     console.log(`模式:     ${CONFIG.sandbox ? '沙箱' : '正式'}`);
     console.log('');
