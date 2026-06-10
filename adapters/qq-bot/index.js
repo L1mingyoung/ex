@@ -203,20 +203,57 @@ function apiRequest(method, apiPath, body) {
     });
 }
 
+/** 统一的 QQ API 请求（带鉴权，私聊/群聊通用） */
+async function qqApiRequest(method, urlPath, body) {
+    const token = await getAccessToken();
+    const data = body ? JSON.stringify(body) : null;
+    return new Promise((resolve, reject) => {
+        const https = require('https');
+        const options = {
+            hostname: API_HOST,
+            path: urlPath,
+            method,
+            headers: {
+                'Content-Type': 'application/json',
+                Authorization: `QQBot ${CONFIG.appId}.${token}`,
+                ...(data ? { 'Content-Length': Buffer.byteLength(data) } : {}),
+            },
+        };
+        const req = https.request(options, (res) => {
+            let b = '';
+            res.on('data', (c) => (b += c));
+            res.on('end', () => {
+                try {
+                    resolve(JSON.parse(b));
+                } catch {
+                    resolve({ raw: b });
+                }
+            });
+        });
+        req.on('error', reject);
+        req.setTimeout(10000, () => {
+            req.destroy();
+            reject(new Error('QQ API 请求超时'));
+        });
+        if (data) req.write(data);
+        req.end();
+    });
+}
+
 // ═══════════════════════════════════════
 //  业务逻辑：会话管理 + 聊天
 // ═══════════════════════════════════════
 
-/** 获取或创建 QQ 用户对应的会话 */
-async function getOrCreateSession(qqUserId) {
-    if (sessionMap.has(qqUserId)) return sessionMap.get(qqUserId);
+/** 获取或创建会话（私聊按用户，群聊按群+用户） */
+async function getOrCreateSession(sessionKey) {
+    if (sessionMap.has(sessionKey)) return sessionMap.get(sessionKey);
 
     const session = await apiRequest('POST', '/api/sessions', {
         characterId: CONFIG.characterId,
-        title: `QQ-${qqUserId}`,
+        title: `QQ-${sessionKey}`,
     });
-    sessionMap.set(qqUserId, session.id);
-    console.log(`[Session] QQ用户 ${qqUserId} → session ${session.id}`);
+    sessionMap.set(sessionKey, session.id);
+    console.log(`[Session] ${sessionKey} → session ${session.id}`);
     return session.id;
 }
 
@@ -227,55 +264,59 @@ async function chat(sessionId, content) {
 }
 
 // ═══════════════════════════════════════
-//  QQ API：发送回复
+//  QQ API：发送回复（统一入口 + 长消息分段）
 // ═══════════════════════════════════════
 
-/** 发送私聊回复 */
-async function sendC2CReply(userId, content, msgId) {
-    const data = JSON.stringify({ content, msg_id: msgId });
-    return httpsRequest(
-        'POST',
-        API_HOST,
-        `/v2/users/${userId}/messages`,
-        data,
-    ).then((res) => {
-        recordReply(msgId);
-        return res;
-    });
+const QQ_MSG_MAX_LENGTH = 2000; // QQ 单条消息最大 2000 字符
+
+/** 将长文本拆成多段 */
+function splitMessage(text, maxLen = QQ_MSG_MAX_LENGTH) {
+    if (text.length <= maxLen) return [text];
+    const chunks = [];
+    let remaining = text;
+    while (remaining.length > 0) {
+        if (remaining.length <= maxLen) {
+            chunks.push(remaining);
+            break;
+        }
+        // 尝试在换行处断开
+        let cutPoint = remaining.lastIndexOf('\n', maxLen);
+        if (cutPoint <= 0) cutPoint = maxLen;
+        chunks.push(remaining.substring(0, cutPoint));
+        remaining = remaining.substring(cutPoint).trimStart();
+    }
+    return chunks;
 }
 
-/** 发送群聊回复 */
-async function sendGroupReply(groupId, content, msgId) {
-    const data = JSON.stringify({ content, msg_id: msgId });
-    const token = await getAccessToken();
-    return new Promise((resolve, reject) => {
-        const https = require('https');
-        const options = {
-            hostname: API_HOST,
-            path: `/v2/groups/${groupId}/messages`,
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                Authorization: `QQBot ${CONFIG.appId}.${token}`,
-                'Content-Length': Buffer.byteLength(data),
-            },
-        };
-        const req = https.request(options, (res) => {
-            let b = '';
-            res.on('data', (c) => (b += c));
-            res.on('end', () => {
-                recordReply(msgId);
-                try {
-                    resolve(JSON.parse(b));
-                } catch {
-                    resolve({ raw: b });
-                }
-            });
+/** 发送私聊回复（支持长消息自动分段） */
+async function sendC2CReply(userId, content, msgId) {
+    const chunks = splitMessage(content);
+    for (const chunk of chunks) {
+        await qqApiRequest('POST', `/v2/users/${userId}/messages`, {
+            content: chunk,
+            msg_id: msgId,
         });
-        req.on('error', reject);
-        req.write(data);
-        req.end();
-    });
+        recordReply(msgId);
+        // 多段之间稍微间隔，避免被限流
+        if (chunks.length > 1) await sleep(500);
+    }
+}
+
+/** 发送群聊回复（支持长消息自动分段） */
+async function sendGroupReply(groupId, content, msgId) {
+    const chunks = splitMessage(content);
+    for (const chunk of chunks) {
+        await qqApiRequest('POST', `/v2/groups/${groupId}/messages`, {
+            content: chunk,
+            msg_id: msgId,
+        });
+        recordReply(msgId);
+        if (chunks.length > 1) await sleep(500);
+    }
+}
+
+function sleep(ms) {
+    return new Promise((r) => setTimeout(r, ms));
 }
 
 // ═══════════════════════════════════════
@@ -377,7 +418,8 @@ function connect() {
                                 op: 2,
                                 d: {
                                     token: authHeader(),
-                                    intents: (1 << 25), // C2C_MESSAGE_CREATE + GROUP_AT_MESSAGE_CREATE
+                                    // intents: bit 25 = GROUP_AT_MESSAGE_CREATE, bit 30 = C2C_MESSAGE_CREATE
+                                    intents: (1 << 25) | (1 << 30),
                                     shard: [0, 1],
                                 },
                             }),
@@ -488,28 +530,36 @@ async function handleC2CMessage(d) {
     }
 
     try {
-        const sid = await getOrCreateSession(qqUserId);
+        const sessionKey = `c2c-${qqUserId}`;
+        const sid = await getOrCreateSession(sessionKey);
         const reply = await chat(sid, content);
         if (!reply) return;
 
-        const token = await getAccessToken();
-        await sendC2CReplyWithAuth(qqUserId, reply, msgId, token);
+        await sendC2CReply(qqUserId, reply, msgId);
         console.log(`[Reply] → ${reply.substring(0, 50)}`);
     } catch (err) {
         console.error('[QQ Bot] 私聊回复失败:', err.message);
     }
 }
 
-/** 处理群聊消息 */
+/** 处理群聊消息（只响应 @机器人 的消息） */
 async function handleGroupMessage(d) {
-    const content = d.content?.trim();
+    const rawContent = d.content?.trim();
     const msgId = d.id;
     const qqUserId = d.author?.id;
     const groupId = d.group_id;
 
-    if (!content || !qqUserId || !msgId || !groupId) return;
+    if (!rawContent || !qqUserId || !msgId || !groupId) return;
     if (isDuplicate(msgId)) {
         console.log(`[Dedup] 跳过重复消息: ${msgId}`);
+        return;
+    }
+
+    // 过滤 @机器人 前缀（QQ 群消息中 @bot 会带在 content 里）
+    // 去掉 @机器人 的 mention 标记后才是真实消息内容
+    const content = rawContent.replace(/<@!?\d+>/g, '').trim();
+    if (!content) {
+        console.log(`[Group] 空消息（纯@），跳过`);
         return;
     }
 
@@ -521,8 +571,8 @@ async function handleGroupMessage(d) {
     }
 
     try {
-        // 群聊用 groupId 作为会话标识
-        const sessionKey = `group-${groupId}`;
+        // 群聊会话按 群+用户 维度隔离（同一群里不同用户各有独立对话）
+        const sessionKey = `group-${groupId}-${qqUserId}`;
         const sid = await getOrCreateSession(sessionKey);
         const reply = await chat(sid, content);
         if (!reply) return;
@@ -532,39 +582,6 @@ async function handleGroupMessage(d) {
     } catch (err) {
         console.error('[QQ Bot] 群聊回复失败:', err.message);
     }
-}
-
-/** 发送私聊回复（带 Auth） */
-async function sendC2CReplyWithAuth(userId, content, msgId, token) {
-    const data = JSON.stringify({ content, msg_id: msgId });
-    return new Promise((resolve, reject) => {
-        const https = require('https');
-        const options = {
-            hostname: API_HOST,
-            path: `/v2/users/${userId}/messages`,
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                Authorization: `QQBot ${CONFIG.appId}.${token}`,
-                'Content-Length': Buffer.byteLength(data),
-            },
-        };
-        const req = https.request(options, (res) => {
-            let b = '';
-            res.on('data', (c) => (b += c));
-            res.on('end', () => {
-                recordReply(msgId);
-                try {
-                    resolve(JSON.parse(b));
-                } catch {
-                    resolve({ raw: b });
-                }
-            });
-        });
-        req.on('error', reject);
-        req.write(data);
-        req.end();
-    });
 }
 
 // ═══════════════════════════════════════
